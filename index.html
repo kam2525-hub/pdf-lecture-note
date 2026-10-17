@@ -77,23 +77,26 @@
 
     <!-- 中央PDF・ノート描画ステージ -->
     <div id="viewer-container" class="viewer-container">
-      <div id="page-stage" class="page-stage">
-        <canvas id="pdf-canvas" class="pdf-canvas"></canvas>
-        <canvas id="drawing-canvas" class="drawing-canvas interactive"></canvas>
-        <div id="overlay-layer" class="overlay-layer"></div>
+      <div id="stage-scroll-sizer" class="stage-scroll-sizer">
+        <div id="page-stage" class="page-stage">
+          <canvas id="pdf-canvas" class="pdf-canvas"></canvas>
+          <canvas id="drawing-canvas" class="drawing-canvas interactive"></canvas>
+          <div id="overlay-layer" class="overlay-layer"></div>
+        </div>
       </div>
     </div>
 
     <!-- ページ送り・白紙ページ挿入・拡大縮小バー -->
     <div class="page-nav-bar">
       <div class="page-nav-controls">
-        <button id="btn-prev-page" class="btn" style="padding: 4px 10px;">◀ 前へ</button>
-        <span id="page-indicator" style="font-weight: 700;">1 / 1 ページ</span>
-        <button id="btn-next-page" class="btn" style="padding: 4px 10px;">次へ ▶</button>
-        <button id="btn-open-blank-modal" class="btn btn-accent" style="padding: 4px 10px;">＋ 白紙ページ挿入</button>
+        <button id="btn-prev-page" class="btn" style="padding: 4px 10px;">◀</button>
+        <span id="page-indicator" style="font-weight: 700; font-size: 0.82rem;">1 / 1</span>
+        <button id="btn-next-page" class="btn" style="padding: 4px 10px;">▶</button>
+        <button id="btn-open-blank-modal" class="btn btn-accent" style="padding: 4px 9px; font-size: 0.78rem;">＋白紙挿入</button>
       </div>
       <div class="page-nav-controls">
         <button id="btn-zoom-out" class="btn" style="padding: 4px 9px;" title="縮小">－</button>
+        <button id="btn-zoom-reset" class="btn" style="padding: 4px 7px; font-size: 0.76rem; min-width: 48px;" title="100%に戻す">100%</button>
         <button id="btn-zoom-in" class="btn" style="padding: 4px 9px;" title="拡大">＋</button>
       </div>
     </div>

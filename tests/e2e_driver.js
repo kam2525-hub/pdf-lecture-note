@@ -45,14 +45,33 @@ export async function runUiE2E() {
     const verticalBoxes = document.querySelectorAll('.text-box-item.vertical');
     assert(verticalBoxes.length === 1, 'Sample page 1 has 1 vertical text box');
 
-    // 3-1. 移動ハンドルバーと文字入力の検証
+    // 3-1. 非選択時の背景透明化＆ハンドル非表示と、選択時のハンドル表示・文字入力の検証
     const handles = document.querySelectorAll('.text-box-handle');
-    assert(handles.length === 4, 'All text boxes have dedicated drag handles');
+    assert(handles.length === 4, 'All text boxes have dedicated drag handles in DOM');
 
     const firstBox = /** @type {HTMLElement} */ (textBoxes[0]);
+    const firstHandle = /** @type {HTMLElement} */ (firstBox.querySelector('.text-box-handle'));
+    const unselectedBg = window.getComputedStyle(firstBox).backgroundColor;
+    const unselectedHandleDisplay = window.getComputedStyle(firstHandle).display;
+    assert(
+      unselectedBg === 'rgba(0, 0, 0, 0)' || unselectedBg === 'transparent',
+      'Unselected text box has transparent background so PDF text underneath is clearly visible'
+    );
+    assert(
+      unselectedHandleDisplay === 'none',
+      'Unselected text box hides move handle bar so PDF text underneath is not covered'
+    );
+
     const firstContent = /** @type {HTMLElement} */ (firstBox.querySelector('.text-box-content'));
     assert(Boolean(firstContent), 'First box has content editable area');
     firstContent.focus();
+    await sleep(30);
+    assert(firstBox.classList.contains('selected'), 'Focusing text box marks it as selected');
+    assert(
+      window.getComputedStyle(firstHandle).display !== 'none',
+      'Selected text box displays floating move handle bar'
+    );
+
     firstContent.innerText = '更新後のメモ入力テスト';
     firstContent.dispatchEvent(new Event('input', { bubbles: true }));
     await sleep(50);
@@ -67,16 +86,35 @@ export async function runUiE2E() {
     const nudgedLeft = parseFloat(firstBox.style.left);
     assert(nudgedLeft > initialLeft, 'Nudge right button moves text box to the right');
 
-    // 3-3. 2本指ピンチズームジェスチャーの検証
+    // 3-3. 2本指ピンチズームジェスチャー＆余白・スクロール領域同期の検証
     const viewer = document.getElementById('viewer-container');
+    const sizer = document.getElementById('stage-scroll-sizer');
+    const stage = document.getElementById('page-stage');
+    const baseSizerWidth = sizer ? parseFloat(sizer.style.width) : 0;
+    assert(baseSizerWidth > 100, 'Stage scroll sizer has valid base width');
+
     const gestureEv = new CustomEvent('gestureend');
     // @ts-ignore
-    gestureEv.scale = 1.4;
+    gestureEv.scale = 1.5;
     viewer?.dispatchEvent(new CustomEvent('gesturestart'));
     viewer?.dispatchEvent(gestureEv);
-    await sleep(200);
-    const indicator = document.getElementById('page-indicator');
-    assert(Boolean(indicator), 'Viewer responsive after pinch zoom gesture');
+    await sleep(100);
+    const zoomedSizerWidth = sizer ? parseFloat(sizer.style.width) : 0;
+    assert(
+      Math.abs(zoomedSizerWidth - Math.round(baseSizerWidth * 1.5)) <= 2,
+      'Pinch zoom scales stage-scroll-sizer width proportionally without blank margin growth'
+    );
+    assert(
+      Boolean(stage && stage.style.transform.includes('scale(1.5)')),
+      'Pinch zoom applies scale(1.5) transform with origin 0 0 to page-stage'
+    );
+
+    // 100%リセットボタンの検証
+    const zoomResetBtn = document.getElementById('btn-zoom-reset');
+    assert(Boolean(zoomResetBtn && zoomResetBtn.textContent === '150%'), 'Zoom reset button displays 150%');
+    zoomResetBtn?.click();
+    await sleep(50);
+    assert(Boolean(zoomResetBtn && zoomResetBtn.textContent === '100%'), 'Zoom reset button restores 100% scale');
 
     // 4. デジタル赤シートモードのON/OFFとタップめくり確認
     const redSheetBtn = /** @type {HTMLElement | null} */ (document.getElementById('btn-red-sheet'));

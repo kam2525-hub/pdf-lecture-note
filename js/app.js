@@ -741,7 +741,7 @@ async function openDocumentEditor(docId, initialPageIndex = 0) {
 
   // スマホ画面幅に合わせて初期表示サイズを計算
   const viewer = document.getElementById('viewer-container');
-  const availWidth = viewer ? Math.max(300, Math.min(780, viewer.clientWidth - 24)) : 600;
+  const availWidth = viewer ? Math.max(280, Math.min(780, viewer.clientWidth - 20)) : 600;
   state.baseViewerWidth = availWidth;
   state.zoomScale = 1.0;
 
@@ -749,6 +749,43 @@ async function openDocumentEditor(docId, initialPageIndex = 0) {
   updateToolButtonsUI();
   renderSubToolbar();
   await renderCurrentPage();
+}
+
+/**
+ * 現在のズーム倍率をステージとスクロール領域（stage-scroll-sizer）に反映する
+ * 再レンダリングによる白紙化や余白増加を起こさず、60fpsで即座に拡大縮小する
+ * @param {number} newZoom
+ */
+function applyZoomScale(newZoom) {
+  state.zoomScale = clamp(Math.round(newZoom * 100) / 100, 0.6, 3.0);
+  const stage = document.getElementById('page-stage');
+  const sizer = document.getElementById('stage-scroll-sizer');
+  const zoomResetBtn = document.getElementById('btn-zoom-reset');
+
+  if (stage) {
+    stage.style.transformOrigin = '0 0';
+    stage.style.transform = `scale(${state.zoomScale})`;
+  }
+  if (sizer) {
+    sizer.style.width = `${Math.round(state.canvasCssWidth * state.zoomScale)}px`;
+    sizer.style.height = `${Math.round(state.canvasCssHeight * state.zoomScale)}px`;
+  }
+  if (zoomResetBtn) {
+    zoomResetBtn.textContent = `${Math.round(state.zoomScale * 100)}%`;
+  }
+}
+
+/**
+ * 空のまま放置されたテキストボックスを自動整理する
+ * @param {string | null} [keepId=null]
+ */
+function cleanupEmptyTextBoxes(keepId = null) {
+  if (!state.activeDoc) return;
+  const pageMeta = state.activeDoc.pages[state.currentPageIndex];
+  if (!pageMeta || !Array.isArray(pageMeta.annotations?.texts)) return;
+  pageMeta.annotations.texts = pageMeta.annotations.texts.filter(
+    (t) => t.id === keepId || (typeof t.content === 'string' && t.content.trim().length > 0)
+  );
 }
 
 /**
@@ -764,7 +801,7 @@ async function renderCurrentPage() {
   const stage = document.getElementById('page-stage');
   if (!pdfCanvas || !drawCanvas || !stage) return;
 
-  const targetWidth = Math.round(state.baseViewerWidth * state.zoomScale);
+  const targetWidth = Math.round(state.baseViewerWidth);
   const dims = await renderPageBaseToCanvas(pdfCanvas, pageMeta, state.activePdfJsDoc, targetWidth);
   state.canvasCssWidth = dims.width;
   state.canvasCssHeight = dims.height;
@@ -772,13 +809,14 @@ async function renderCurrentPage() {
   stage.style.width = `${dims.width}px`;
   stage.style.height = `${dims.height}px`;
 
-  // 手書きレイヤーのサイズ同期
-  const dpr = clamp(window.devicePixelRatio || 1, 1, 3);
+  // 手書きレイヤーのサイズ同期（高解像度対応）
+  const dpr = clamp(Math.max(window.devicePixelRatio || 1, 2), 1, 3);
   drawCanvas.style.width = `${dims.width}px`;
   drawCanvas.style.height = `${dims.height}px`;
   drawCanvas.width = Math.round(dims.width * dpr);
   drawCanvas.height = Math.round(dims.height * dpr);
 
+  applyZoomScale(state.zoomScale);
   renderStrokesCanvas();
   renderOverlayElements();
   updatePageNavUI();
@@ -797,7 +835,7 @@ function renderStrokesCanvas() {
   const ctx = drawCanvas.getContext('2d');
   if (!ctx) return;
 
-  const dpr = clamp(window.devicePixelRatio || 1, 1, 3);
+  const dpr = clamp(Math.max(window.devicePixelRatio || 1, 2), 1, 3);
   ctx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
   ctx.save();
   ctx.scale(dpr, dpr);
@@ -858,6 +896,24 @@ function renderStrokesCanvas() {
   }
 
   ctx.restore();
+}
+
+/**
+ * テキストボックスの画面端クラス（右端・上端でのバー見切れ防止）を更新する
+ * @param {HTMLElement} box
+ * @param {{ xNorm: number, yNorm: number }} item
+ */
+function updateTextBoxEdgeClasses(box, item) {
+  if (item.xNorm > 0.52) {
+    box.classList.add('align-right');
+  } else {
+    box.classList.remove('align-right');
+  }
+  if (item.yNorm < 0.08) {
+    box.classList.add('near-top');
+  } else {
+    box.classList.remove('near-top');
+  }
 }
 
 /**
@@ -936,17 +992,18 @@ function renderOverlayElements() {
       isSelected ? 'selected' : ''
     } ${redSheetClass}`.trim();
     box.setAttribute('data-id', item.id);
+    updateTextBoxEdgeClasses(box, item);
 
     box.style.left = `${Math.round(item.xNorm * w)}px`;
     box.style.top = `${Math.round(item.yNorm * h)}px`;
 
-    // 1. ドラッグ移動ハンドルバー（上部バー）
+    // 1. ドラッグ移動ハンドルバー（選択中のみ上部に浮かんで表示されるため、非選択時はPDFを一切隠さない）
     const handleEl = document.createElement('div');
     handleEl.className = 'text-box-handle';
 
     const handleTitle = document.createElement('div');
     handleTitle.className = 'handle-title-wrap';
-    handleTitle.innerHTML = '<span class="handle-icon">✥</span><span>移動</span>';
+    handleTitle.innerHTML = '<span class="handle-icon">✥</span><span>ここをドラッグで移動</span>';
 
     const editBtn = document.createElement('button');
     editBtn.className = 'handle-edit-btn';
@@ -956,9 +1013,6 @@ function renderOverlayElements() {
     editBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      state.selectedTextId = item.id;
-      renderOverlayElements();
-      renderSubToolbar();
       const content = /** @type {HTMLElement | null} */ (box.querySelector('.text-box-content'));
       content?.focus();
     });
@@ -966,7 +1020,7 @@ function renderOverlayElements() {
     handleEl.append(handleTitle, editBtn);
     box.appendChild(handleEl);
 
-    // 2. テキストボックス上部のフローティング操作バー（横書き⇔縦書き切替・微調整・サイズ・削除）
+    // 2. 選択時のフローティング操作バー（横書き⇔縦書き切替・微調整・サイズ・削除）
     const ctrls = document.createElement('div');
     ctrls.className = 'text-box-controls';
     ctrls.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -1000,6 +1054,7 @@ function renderOverlayElements() {
         item.yNorm = clamp(item.yNorm + dyNorm, 0.01, 0.95);
         box.style.left = `${Math.round(item.xNorm * w)}px`;
         box.style.top = `${Math.round(item.yNorm * h)}px`;
+        updateTextBoxEdgeClasses(box, item);
         await autoSaveActiveDocument();
       });
       return btn;
@@ -1069,27 +1124,33 @@ function renderOverlayElements() {
     contentEl.style.color = item.color || '#1e293b';
     contentEl.textContent = item.content || '';
 
-    // タップ・クリックで選択
-    contentEl.addEventListener('click', (e) => {
-      if (state.redSheetActive) return;
-      e.stopPropagation();
+    const selectThisBox = () => {
       if (state.selectedTextId !== item.id) {
+        cleanupEmptyTextBoxes(item.id);
         state.selectedTextId = item.id;
         document.querySelectorAll('.text-box-item').forEach((el) => el.classList.remove('selected'));
         box.classList.add('selected');
         renderSubToolbar();
       }
+    };
+
+    contentEl.addEventListener('click', (e) => {
+      if (state.redSheetActive) return;
+      e.stopPropagation();
+      if (state.currentTool === 'eraser') {
+        recordHistoryBeforeChange();
+        pageMeta.annotations.texts = pageMeta.annotations.texts.filter((t) => t.id !== item.id);
+        renderOverlayElements();
+        autoSaveActiveDocument();
+        return;
+      }
+      selectThisBox();
     });
 
     let beforeEditSnapshotRecorded = false;
     contentEl.addEventListener('focus', () => {
       beforeEditSnapshotRecorded = false;
-      if (state.selectedTextId !== item.id) {
-        state.selectedTextId = item.id;
-        document.querySelectorAll('.text-box-item').forEach((el) => el.classList.remove('selected'));
-        box.classList.add('selected');
-        renderSubToolbar();
-      }
+      selectThisBox();
     });
 
     contentEl.addEventListener('input', async () => {
@@ -1105,10 +1166,7 @@ function renderOverlayElements() {
 
     // ハンドルバーにドラッグ移動を付与
     attachDragBehavior(handleEl, item, () => {
-      state.selectedTextId = item.id;
-      document.querySelectorAll('.text-box-item').forEach((el) => el.classList.remove('selected'));
-      box.classList.add('selected');
-      renderSubToolbar();
+      selectThisBox();
     }, box);
 
     // 赤シートモード時はボックス全体のタップで開閉
@@ -1126,6 +1184,7 @@ function renderOverlayElements() {
 
 /**
  * 要素（テキストボックスハンドル・スタンプ）のドラッグ移動とタップ処理を付与する
+ * ズーム倍率 (state.zoomScale) を考慮して指の動きに1:1で追従する
  * @param {HTMLElement} handleEl ドラッグの起点となる要素
  * @param {{ xNorm: number, yNorm: number }} dataItem データオブジェクト
  * @param {() => void} [onTapCallback] タップ時のコールバック
@@ -1141,7 +1200,6 @@ function attachDragBehavior(handleEl, dataItem, onTapCallback, targetMoveEl = nu
   let dragging = false;
 
   handleEl.addEventListener('pointerdown', (e) => {
-    // 赤シートモード中はドラッグせずタップ判定のみ
     if (state.redSheetActive) return;
 
     e.stopPropagation();
@@ -1171,10 +1229,14 @@ function attachDragBehavior(handleEl, dataItem, onTapCallback, targetMoveEl = nu
     if (moved) {
       const w = state.canvasCssWidth || 1;
       const h = state.canvasCssHeight || 1;
-      dataItem.xNorm = clamp(origXNorm + dx / w, 0.01, 0.94);
-      dataItem.yNorm = clamp(origYNorm + dy / h, 0.01, 0.95);
+      const zoom = state.zoomScale || 1;
+      dataItem.xNorm = clamp(origXNorm + dx / (w * zoom), 0.01, 0.94);
+      dataItem.yNorm = clamp(origYNorm + dy / (h * zoom), 0.01, 0.95);
       moveTarget.style.left = `${Math.round(dataItem.xNorm * w)}px`;
       moveTarget.style.top = `${Math.round(dataItem.yNorm * h)}px`;
+      if (targetMoveEl) {
+        updateTextBoxEdgeClasses(targetMoveEl, dataItem);
+      }
     }
   });
 
@@ -1229,14 +1291,17 @@ function setupCanvasInteractions() {
 
     // 1. テキスト配置モード
     if (state.currentTool === 'text') {
-      // 既存のテキスト選択中なら選択解除のみ
+      // 既存のテキスト選択中なら選択解除＆空ボックス整理のみ行う
       if (state.selectedTextId) {
         state.selectedTextId = null;
+        cleanupEmptyTextBoxes(null);
         renderOverlayElements();
         renderSubToolbar();
+        await autoSaveActiveDocument();
         return;
       }
 
+      cleanupEmptyTextBoxes(null);
       recordHistoryBeforeChange();
       const newId = `txt_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const newText = {
@@ -1258,7 +1323,7 @@ function setupCanvasInteractions() {
 
       // 追加したテキストボックスにすぐフォーカスしてスマホキーボードを出す
       const selectedContent = /** @type {HTMLElement | null} */ (
-        document.querySelector('.text-box-item.selected .text-box-content')
+        document.querySelector(`.text-box-item[data-id="${newId}"] .text-box-content`)
       );
       if (selectedContent) {
         selectedContent.focus();
@@ -1408,6 +1473,34 @@ function distanceToSegment(px, py, x1, y1, x2, y2) {
 }
 
 /**
+ * ビューア内の指定アンカー座標 (viewX, viewY) を中心にズーム倍率を変更し、スクロール位置を補正する
+ * @param {number} targetZoom
+ * @param {number} [viewAnchorX]
+ * @param {number} [viewAnchorY]
+ */
+function zoomAroundPoint(targetZoom, viewAnchorX, viewAnchorY) {
+  const viewer = document.getElementById('viewer-container');
+  const prevZoom = state.zoomScale || 1.0;
+  const nextZoom = clamp(Math.round(targetZoom * 100) / 100, 0.6, 3.0);
+
+  if (!viewer) {
+    applyZoomScale(nextZoom);
+    return;
+  }
+
+  const anchorX = typeof viewAnchorX === 'number' ? viewAnchorX : viewer.clientWidth / 2;
+  const anchorY = typeof viewAnchorY === 'number' ? viewAnchorY : viewer.clientHeight / 2;
+
+  const docX = (viewer.scrollLeft + anchorX) / prevZoom;
+  const docY = (viewer.scrollTop + anchorY) / prevZoom;
+
+  applyZoomScale(nextZoom);
+
+  viewer.scrollLeft = Math.max(0, docX * state.zoomScale - anchorX);
+  viewer.scrollTop = Math.max(0, docY * state.zoomScale - anchorY);
+}
+
+/**
  * 2本指ピンチによるPDFの拡大・縮小＆パン移動、および1本指でのスクロール移動
  */
 function setupPinchZoomAndPan() {
@@ -1415,138 +1508,131 @@ function setupPinchZoomAndPan() {
   const stage = document.getElementById('page-stage');
   if (!viewer || !stage) return;
 
-  /** @type {Map<number, { clientX: number, clientY: number }>} */
-  const activePointers = new Map();
-
+  let isTouchPinching = false;
   let pinchInitialDist = 0;
   let pinchInitialZoom = 1.0;
-  let pinchInitialMidX = 0;
-  let pinchInitialMidY = 0;
-  let pinchInitialScrollLeft = 0;
-  let pinchInitialScrollTop = 0;
-  let isPinching = false;
-  let currentPinchRatio = 1.0;
+  let pinchDocX = 0;
+  let pinchDocY = 0;
 
-  // 1本指パン（移動ツール選択時）
+  // 1本指パン（移動ツール選択時またはマウスドラッグ）
   let isPanDragging = false;
   let panStartX = 0;
   let panStartY = 0;
   let panStartScrollLeft = 0;
   let panStartScrollTop = 0;
 
-  const onPointerDown = (e) => {
-    // マウス右クリック等は除外
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+  // スマホ2本指タッチによるピンチ拡大縮小＆2本指スクロール移動
+  viewer.addEventListener(
+    'touchstart',
+    (e) => {
+      if (e.touches.length >= 2) {
+        if (state.isDrawing) {
+          state.isDrawing = false;
+          state.currentStrokePoints = [];
+          renderStrokesCanvas();
+        }
+        isPanDragging = false;
+        isTouchPinching = true;
 
-    // 2本以上の指が触れた場合：手書きなどの描画を即座にキャンセルしてピンチズームへ移行
-    if (activePointers.size >= 2) {
-      if (state.isDrawing) {
-        state.isDrawing = false;
-        state.currentStrokePoints = [];
-        renderStrokesCanvas();
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        pinchInitialDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        pinchInitialZoom = state.zoomScale || 1.0;
+
+        const rect = viewer.getBoundingClientRect();
+        const midViewX = (t1.clientX + t2.clientX) / 2 - rect.left;
+        const midViewY = (t1.clientY + t2.clientY) / 2 - rect.top;
+
+        pinchDocX = (viewer.scrollLeft + midViewX) / pinchInitialZoom;
+        pinchDocY = (viewer.scrollTop + midViewY) / pinchInitialZoom;
       }
-      isPanDragging = false;
-      isPinching = true;
+    },
+    { passive: true }
+  );
 
-      const pts = Array.from(activePointers.values());
-      pinchInitialDist = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
-      pinchInitialZoom = state.zoomScale;
-      pinchInitialMidX = (pts[0].clientX + pts[1].clientX) / 2;
-      pinchInitialMidY = (pts[0].clientY + pts[1].clientY) / 2;
-      pinchInitialScrollLeft = viewer.scrollLeft;
-      pinchInitialScrollTop = viewer.scrollTop;
-      currentPinchRatio = 1.0;
-      return;
-    }
+  viewer.addEventListener(
+    'touchmove',
+    (e) => {
+      if (isTouchPinching && e.touches.length >= 2) {
+        e.preventDefault(); // ブラウザ全体のズームやゴムバンド余白を防止しPDFのみを滑らかに拡大
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        const ratio = currDist / Math.max(12, pinchInitialDist);
+        const newZoom = clamp(pinchInitialZoom * ratio, 0.6, 3.0);
 
-    // 1本指の場合：移動ツール選択時ならスクロール移動を開始
-    if (activePointers.size === 1 && state.currentTool === 'pan' && !state.redSheetActive) {
-      isPanDragging = true;
-      panStartX = e.clientX;
-      panStartY = e.clientY;
-      panStartScrollLeft = viewer.scrollLeft;
-      panStartScrollTop = viewer.scrollTop;
+        const rect = viewer.getBoundingClientRect();
+        const currViewX = (t1.clientX + t2.clientX) / 2 - rect.left;
+        const currViewY = (t1.clientY + t2.clientY) / 2 - rect.top;
+
+        applyZoomScale(newZoom);
+        viewer.scrollLeft = Math.max(0, pinchDocX * state.zoomScale - currViewX);
+        viewer.scrollTop = Math.max(0, pinchDocY * state.zoomScale - currViewY);
+      }
+    },
+    { passive: false }
+  );
+
+  const endTouchPinch = (e) => {
+    if (isTouchPinching && (!e.touches || e.touches.length < 2)) {
+      isTouchPinching = false;
     }
   };
+  viewer.addEventListener('touchend', endTouchPinch, { passive: true });
+  viewer.addEventListener('touchcancel', endTouchPinch, { passive: true });
 
-  const onPointerMove = (e) => {
-    if (!activePointers.has(e.pointerId)) return;
-    activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+  // 1本指・マウスでのパン移動（移動ツール選択時）
+  viewer.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (isTouchPinching || e.isPrimary === false) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (state.currentTool === 'pan' && !state.redSheetActive) {
+        isPanDragging = true;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+        panStartScrollLeft = viewer.scrollLeft;
+        panStartScrollTop = viewer.scrollTop;
+      }
+    },
+    { passive: true }
+  );
 
-    // 2本指ピンチズーム中
-    if (isPinching && activePointers.size >= 2) {
-      const pts = Array.from(activePointers.values());
-      const currDist = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
-      currentPinchRatio = currDist / Math.max(10, pinchInitialDist);
-
-      const currMidX = (pts[0].clientX + pts[1].clientX) / 2;
-      const currMidY = (pts[0].clientY + pts[1].clientY) / 2;
-      const panDx = currMidX - pinchInitialMidX;
-      const panDy = currMidY - pinchInitialMidY;
-
-      viewer.scrollLeft = pinchInitialScrollLeft - panDx;
-      viewer.scrollTop = pinchInitialScrollTop - panDy;
-
-      // GPUアクセラレーションで滑らかに即時プレビュー
-      stage.style.transformOrigin = 'center center';
-      stage.style.transform = `scale(${currentPinchRatio})`;
-      return;
-    }
-
-    // 1本指パン移動中
-    if (isPanDragging && activePointers.size === 1) {
+  window.addEventListener(
+    'pointermove',
+    (e) => {
+      if (!isPanDragging || isTouchPinching) return;
       const dx = e.clientX - panStartX;
       const dy = e.clientY - panStartY;
       viewer.scrollLeft = panStartScrollLeft - dx;
       viewer.scrollTop = panStartScrollTop - dy;
-    }
+    },
+    { passive: true }
+  );
+
+  const endPointerPan = () => {
+    isPanDragging = false;
   };
+  window.addEventListener('pointerup', endPointerPan, { passive: true });
+  window.addEventListener('pointercancel', endPointerPan, { passive: true });
 
-  const onPointerUp = async (e) => {
-    activePointers.delete(e.pointerId);
-
-    if (isPinching && activePointers.size < 2) {
-      isPinching = false;
-      stage.style.transform = '';
-      const newScale = clamp(pinchInitialZoom * currentPinchRatio, 0.5, 3.0);
-      state.zoomScale = Math.round(newScale * 10) / 10;
-      await renderCurrentPage();
-    }
-
-    if (activePointers.size === 0) {
-      isPanDragging = false;
-    }
-  };
-
-  viewer.addEventListener('pointerdown', onPointerDown, { passive: true });
-  window.addEventListener('pointermove', onPointerMove, { passive: true });
-  window.addEventListener('pointerup', onPointerUp, { passive: true });
-  window.addEventListener('pointercancel', onPointerUp, { passive: true });
-
-  // iOS Safariのネイティブ2本指ジェスチャー対応
-  viewer.addEventListener('gesturestart', (e) => {
-    // @ts-ignore
+  // デスクトップSafariトラックパッド・テスト用のgestureイベント対応（タッチピンチ中は二重発火しないようスキップ）
+  viewer.addEventListener('gesturestart', () => {
+    if (isTouchPinching) return;
     pinchInitialZoom = state.zoomScale;
-    if (state.isDrawing) {
-      state.isDrawing = false;
-      state.currentStrokePoints = [];
-      renderStrokesCanvas();
-    }
   });
   viewer.addEventListener('gesturechange', (e) => {
+    if (isTouchPinching) return;
     e.preventDefault();
     // @ts-ignore
     const scale = e.scale || 1.0;
-    stage.style.transform = `scale(${scale})`;
+    zoomAroundPoint(pinchInitialZoom * scale);
   });
-  viewer.addEventListener('gestureend', async (e) => {
+  viewer.addEventListener('gestureend', (e) => {
+    if (isTouchPinching) return;
     // @ts-ignore
     const scale = e.scale || 1.0;
-    stage.style.transform = '';
-    state.zoomScale = clamp(pinchInitialZoom * scale, 0.5, 3.0);
-    state.zoomScale = Math.round(state.zoomScale * 10) / 10;
-    await renderCurrentPage();
+    zoomAroundPoint(pinchInitialZoom * scale);
   });
 }
 
@@ -2074,6 +2160,7 @@ export async function initApp() {
       const tool = /** @type {any} */ (btn.getAttribute('data-tool') || 'text');
       state.currentTool = tool;
       state.selectedTextId = null;
+      cleanupEmptyTextBoxes(null);
       if (state.redSheetActive) {
         state.redSheetActive = false;
         updateRedSheetButtonUI();
@@ -2081,6 +2168,7 @@ export async function initApp() {
       updateToolButtonsUI();
       renderSubToolbar();
       renderOverlayElements();
+      autoSaveActiveDocument();
     });
   });
 
@@ -2116,25 +2204,32 @@ export async function initApp() {
   // ページ移動
   document.getElementById('btn-prev-page')?.addEventListener('click', async () => {
     if (!state.activeDoc || state.currentPageIndex <= 0) return;
+    cleanupEmptyTextBoxes(null);
     state.currentPageIndex -= 1;
     state.selectedTextId = null;
     await renderCurrentPage();
   });
   document.getElementById('btn-next-page')?.addEventListener('click', async () => {
     if (!state.activeDoc || state.currentPageIndex >= state.activeDoc.pages.length - 1) return;
+    cleanupEmptyTextBoxes(null);
     state.currentPageIndex += 1;
     state.selectedTextId = null;
     await renderCurrentPage();
   });
 
-  // 拡大・縮小
-  document.getElementById('btn-zoom-in')?.addEventListener('click', async () => {
-    state.zoomScale = clamp(state.zoomScale + 0.2, 0.6, 2.6);
-    await renderCurrentPage();
+  // 拡大・縮小・100%リセット（再レンダリングによる余白増加や白紙化を起こさず即座に中心基準ズーム）
+  document.getElementById('btn-zoom-in')?.addEventListener('click', () => {
+    zoomAroundPoint(state.zoomScale + 0.25);
   });
-  document.getElementById('btn-zoom-out')?.addEventListener('click', async () => {
-    state.zoomScale = clamp(state.zoomScale - 0.2, 0.6, 2.6);
-    await renderCurrentPage();
+  document.getElementById('btn-zoom-out')?.addEventListener('click', () => {
+    zoomAroundPoint(state.zoomScale - 0.25);
+  });
+  document.getElementById('btn-zoom-reset')?.addEventListener('click', () => {
+    zoomAroundPoint(1.0);
+    const viewer = document.getElementById('viewer-container');
+    if (viewer) {
+      viewer.scrollLeft = 0;
+    }
   });
 
   // 白紙ページ挿入モーダル

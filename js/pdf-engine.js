@@ -121,13 +121,16 @@ export async function loadPdfJsInstance(pdfBytes) {
   return await loadingTask.promise;
 }
 
+/** @type {any | null} */
+let activePdfRenderTask = null;
+
 /**
  * 指定されたPDFページまたは白紙ノートページをCanvasに描画する
  * @param {HTMLCanvasElement} canvas
  * @param {any} pageMeta ページ情報
  * @param {any | null} pdfJsDoc PDF.jsドキュメントインスタンス
  * @param {number} targetWidth 画面上の表示幅 (px)
- * @param {number} [devicePixelRatio=1]
+ * @param {number} [devicePixelRatio]
  * @returns {Promise<{ width: number, height: number }>}
  */
 export async function renderPageBaseToCanvas(
@@ -135,8 +138,17 @@ export async function renderPageBaseToCanvas(
   pageMeta,
   pdfJsDoc,
   targetWidth,
-  devicePixelRatio = window.devicePixelRatio || 1
+  devicePixelRatio = Math.max(window.devicePixelRatio || 1, 2.4)
 ) {
+  if (activePdfRenderTask) {
+    try {
+      activePdfRenderTask.cancel();
+    } catch {
+      // ignore
+    }
+    activePdfRenderTask = null;
+  }
+
   const dpr = clamp(devicePixelRatio, 1, 3);
   const baseWidth = pageMeta.width || 595.28;
   const baseHeight = pageMeta.height || 841.89;
@@ -157,10 +169,23 @@ export async function renderPageBaseToCanvas(
     const viewport = pdfPage.getViewport({ scale: scale * dpr });
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await pdfPage.render({
+    const task = pdfPage.render({
       canvasContext: ctx,
       viewport,
-    }).promise;
+    });
+    activePdfRenderTask = task;
+    try {
+      await task.promise;
+    } catch (err) {
+      if (err && /** @type {any} */ (err).name === 'RenderingCancelledException') {
+        return { width: cssWidth, height: cssHeight };
+      }
+      throw err;
+    } finally {
+      if (activePdfRenderTask === task) {
+        activePdfRenderTask = null;
+      }
+    }
   } else {
     ctx.save();
     ctx.scale(dpr, dpr);
