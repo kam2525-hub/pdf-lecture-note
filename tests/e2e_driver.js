@@ -71,6 +71,10 @@ export async function runUiE2E() {
       window.getComputedStyle(firstHandle).display !== 'none',
       'Selected text box displays floating move handle bar'
     );
+    assert(
+      Math.abs(firstHandle.getBoundingClientRect().width - firstBox.getBoundingClientRect().width) <= 4,
+      'Move handle bar tightly fits the text box width rather than being oversized'
+    );
 
     firstContent.innerText = '更新後のメモ入力テスト';
     firstContent.dispatchEvent(new Event('input', { bubbles: true }));

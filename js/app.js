@@ -997,30 +997,19 @@ function renderOverlayElements() {
     box.style.left = `${Math.round(item.xNorm * w)}px`;
     box.style.top = `${Math.round(item.yNorm * h)}px`;
 
-    // 1. ドラッグ移動ハンドルバー（選択中のみ上部に浮かんで表示されるため、非選択時はPDFを一切隠さない）
+    // 1. ドラッグ移動ハンドルバー（選択中のみ上部に表示・テキスト幅にぴったりフィット）
     const handleEl = document.createElement('div');
     handleEl.className = 'text-box-handle';
+    handleEl.title = 'ドラッグして移動';
 
     const handleTitle = document.createElement('div');
     handleTitle.className = 'handle-title-wrap';
-    handleTitle.innerHTML = '<span class="handle-icon">✥</span><span>ここをドラッグで移動</span>';
+    handleTitle.innerHTML = '<span class="handle-icon">✥</span><span class="handle-label">移動</span>';
 
-    const editBtn = document.createElement('button');
-    editBtn.className = 'handle-edit-btn';
-    editBtn.type = 'button';
-    editBtn.textContent = '✏️ 入力';
-    editBtn.title = '文字を入力・編集';
-    editBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
-    editBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const content = /** @type {HTMLElement | null} */ (box.querySelector('.text-box-content'));
-      content?.focus();
-    });
-
-    handleEl.append(handleTitle, editBtn);
+    handleEl.appendChild(handleTitle);
     box.appendChild(handleEl);
 
-    // 2. 選択時のフローティング操作バー（横書き⇔縦書き切替・微調整・サイズ・削除）
+    // 2. 選択時のフローティング操作バー（コンパクト＆中央配置）
     const ctrls = document.createElement('div');
     ctrls.className = 'text-box-controls';
     ctrls.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -1069,40 +1058,11 @@ function renderOverlayElements() {
     const rightBtn = createNudgeBtn('▶', 0.012, 0);
     rightBtn.setAttribute('data-action', 'nudge-right');
 
-    const smallerBtn = document.createElement('button');
-    smallerBtn.className = 'mini-ctrl-btn';
-    smallerBtn.type = 'button';
-    smallerBtn.textContent = 'A-';
-    smallerBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      recordHistoryBeforeChange();
-      item.fontSize = clamp((item.fontSize || 16) - 2, 10, 42);
-      state.prefFontSize = item.fontSize;
-      await saveSetting('prefFontSize', state.prefFontSize);
-      renderOverlayElements();
-      renderSubToolbar();
-      await autoSaveActiveDocument();
-    });
-
-    const largerBtn = document.createElement('button');
-    largerBtn.className = 'mini-ctrl-btn';
-    largerBtn.type = 'button';
-    largerBtn.textContent = 'A+';
-    largerBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      recordHistoryBeforeChange();
-      item.fontSize = clamp((item.fontSize || 16) + 2, 10, 42);
-      state.prefFontSize = item.fontSize;
-      await saveSetting('prefFontSize', state.prefFontSize);
-      renderOverlayElements();
-      renderSubToolbar();
-      await autoSaveActiveDocument();
-    });
-
     const delTxtBtn = document.createElement('button');
     delTxtBtn.className = 'mini-ctrl-btn danger';
     delTxtBtn.type = 'button';
-    delTxtBtn.textContent = '削除';
+    delTxtBtn.textContent = '✕';
+    delTxtBtn.title = 'テキストを削除';
     delTxtBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       recordHistoryBeforeChange();
@@ -1112,7 +1072,7 @@ function renderOverlayElements() {
       await autoSaveActiveDocument();
     });
 
-    ctrls.append(toggleDirBtn, leftBtn, upBtn, downBtn, rightBtn, smallerBtn, largerBtn, delTxtBtn);
+    ctrls.append(toggleDirBtn, leftBtn, upBtn, downBtn, rightBtn, delTxtBtn);
     box.appendChild(ctrls);
 
     // 3. テキスト編集本体
@@ -1223,6 +1183,7 @@ function attachDragBehavior(handleEl, dataItem, onTapCallback, targetMoveEl = nu
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
       if (!moved) {
         recordHistoryBeforeChange();
+        moveTarget.classList.add('is-dragging');
       }
       moved = true;
     }
@@ -1243,6 +1204,7 @@ function attachDragBehavior(handleEl, dataItem, onTapCallback, targetMoveEl = nu
   const endDrag = async (e) => {
     if (!dragging) return;
     dragging = false;
+    moveTarget.classList.remove('is-dragging');
     try {
       handleEl.releasePointerCapture(e.pointerId);
     } catch {
@@ -1831,6 +1793,69 @@ function renderSubToolbar() {
 
     sizeGroup.append(minusBtn, sizeLabel, plusBtn);
     bar.appendChild(sizeGroup);
+
+    if (selectedTextObj) {
+      const nudgeGroup = document.createElement('div');
+      nudgeGroup.className = 'tool-option-group';
+      const w = state.canvasCssWidth || 1;
+      const h = state.canvasCssHeight || 1;
+      const nudge = async (dxNorm, dyNorm) => {
+        recordHistoryBeforeChange();
+        selectedTextObj.xNorm = clamp(selectedTextObj.xNorm + dxNorm, 0.01, 0.95);
+        selectedTextObj.yNorm = clamp(selectedTextObj.yNorm + dyNorm, 0.01, 0.95);
+        const box = document.querySelector(`.text-box-item[data-id="${selectedTextObj.id}"]`);
+        if (box) {
+          /** @type {HTMLElement} */ (box).style.left = `${Math.round(selectedTextObj.xNorm * w)}px`;
+          /** @type {HTMLElement} */ (box).style.top = `${Math.round(selectedTextObj.yNorm * h)}px`;
+          updateTextBoxEdgeClasses(/** @type {HTMLElement} */ (box), selectedTextObj);
+        }
+        await autoSaveActiveDocument();
+      };
+
+      const leftB = document.createElement('button');
+      leftB.className = 'btn';
+      leftB.style.padding = '3px 8px';
+      leftB.textContent = '◀';
+      leftB.title = '左へ微調整';
+      leftB.addEventListener('click', () => nudge(-0.012, 0));
+
+      const upB = document.createElement('button');
+      upB.className = 'btn';
+      upB.style.padding = '3px 8px';
+      upB.textContent = '▲';
+      upB.title = '上へ微調整';
+      upB.addEventListener('click', () => nudge(0, -0.012));
+
+      const downB = document.createElement('button');
+      downB.className = 'btn';
+      downB.style.padding = '3px 8px';
+      downB.textContent = '▼';
+      downB.title = '下へ微調整';
+      downB.addEventListener('click', () => nudge(0, 0.012));
+
+      const rightB = document.createElement('button');
+      rightB.className = 'btn';
+      rightB.style.padding = '3px 8px';
+      rightB.textContent = '▶';
+      rightB.title = '右へ微調整';
+      rightB.addEventListener('click', () => nudge(0.012, 0));
+
+      const delB = document.createElement('button');
+      delB.className = 'btn btn-danger';
+      delB.style.padding = '3px 8px';
+      delB.textContent = '🗑 削除';
+      delB.addEventListener('click', async () => {
+        recordHistoryBeforeChange();
+        pageMeta.annotations.texts = pageMeta.annotations.texts.filter((t) => t.id !== selectedTextObj.id);
+        state.selectedTextId = null;
+        renderOverlayElements();
+        renderSubToolbar();
+        await autoSaveActiveDocument();
+      });
+
+      nudgeGroup.append(leftB, upB, downB, rightB, delB);
+      bar.appendChild(nudgeGroup);
+    }
     return;
   }
 

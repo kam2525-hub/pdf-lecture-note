@@ -553,47 +553,69 @@ button, input, select, textarea {
 .text-box-item {
   position: absolute;
   pointer-events: auto;
-  min-width: 18px;
-  min-height: 18px;
+  width: fit-content;
+  height: fit-content;
+  max-width: 96%;
   border: 1.5px dashed transparent;
-  border-radius: 6px;
+  border-radius: 4px;
   background-color: transparent;
-  padding: 1px 3px;
+  padding: 1px 2px;
   box-shadow: none;
+  box-sizing: border-box;
   transition: border-color 0.12s ease, background-color 0.12s ease;
   touch-action: manipulation;
 }
 
-/* 選択中のみ枠線と半透明背景、移動ハンドル、操作バーを表示 */
+/* 選択中のみテキストサイズにぴったり合わせた枠線と半透明背景を表示 */
 .text-box-item.selected {
   border-color: var(--primary);
-  background-color: rgba(255, 255, 255, 0.72);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+  background-color: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 0 0 1.5px rgba(37, 99, 235, 0.25);
   z-index: 35;
 }
 
-/* ドラッグ移動用のフローティングハンドルバー（選択時のみテキスト上部に浮かせて表示・文字位置をずらさない） */
+/* 移動中（ドラッグ中）は枠線と文字だけを指で滑らかに動かせるようハンドルと操作ボタンを非表示化 */
+.text-box-item.is-dragging {
+  background-color: rgba(255, 255, 255, 0.9);
+  border-style: solid;
+  border-color: var(--primary);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
+  z-index: 50;
+}
+
+.text-box-item.is-dragging .text-box-handle,
+.text-box-item.is-dragging .text-box-controls {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ドラッグ移動ハンドル：テキストの幅にぴったりフィットするスリムな移動バー */
 .text-box-handle {
   position: absolute;
-  bottom: calc(100% + 4px);
+  bottom: calc(100% + 2px);
   left: 0;
+  width: 100%;
+  min-width: 28px;
+  max-width: 100%;
+  height: 18px;
   display: none;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
+  justify-content: center;
+  gap: 3px;
   background: #1e293b;
   color: #f8fafc;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
-  padding: 4px 9px;
-  border-radius: 6px;
+  padding: 1px 4px;
+  border-radius: 4px;
   cursor: grab;
   touch-action: none !important;
   user-select: none;
   -webkit-user-select: none;
   white-space: nowrap;
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   z-index: 45;
+  box-sizing: border-box;
 }
 
 .text-box-item.selected .text-box-handle {
@@ -608,23 +630,24 @@ button, input, select, textarea {
 .handle-title-wrap {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  gap: 2px;
   pointer-events: none;
 }
 
-.handle-edit-btn {
-  border: none;
-  background: rgba(255, 255, 255, 0.22);
-  color: #ffffff;
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  cursor: pointer;
+.handle-icon {
+  font-size: 0.75rem;
+  line-height: 1;
 }
 
-.handle-edit-btn:hover {
-  background: rgba(255, 255, 255, 0.35);
+.handle-label {
+  font-size: 0.64rem;
+  letter-spacing: -0.02em;
+}
+
+/* 縦書きの狭いボックスではラベル「移動」を非表示にして✥アイコンのみに縮小 */
+.text-box-item.vertical .handle-label {
+  display: none;
 }
 
 /* テキスト編集本体 */
@@ -632,16 +655,16 @@ button, input, select, textarea {
   outline: none;
   white-space: pre-wrap;
   word-break: break-word;
-  line-height: 1.3;
+  line-height: 1.25;
   font-weight: 600;
   user-select: text !important;
   -webkit-user-select: text !important;
   cursor: text;
-  min-width: 24px;
-  min-height: 20px;
+  min-width: 16px;
+  min-height: 18px;
   touch-action: manipulation !important;
   background: transparent;
-  padding: 1px;
+  padding: 1px 2px;
   border-radius: 3px;
 }
 
@@ -653,32 +676,33 @@ button, input, select, textarea {
 }
 
 .text-box-content:focus {
-  background: rgba(255, 255, 255, 0.88);
+  background: rgba(255, 255, 255, 0.9);
 }
 
-/* 縦書きスタイル */
+/* 縦書きスタイル：1文字からテキストの高さにぴったり合わせる */
 .text-box-item.vertical .text-box-content {
   writing-mode: vertical-rl;
   -webkit-writing-mode: vertical-rl;
   text-orientation: upright;
   line-height: 1.35;
-  min-height: 56px;
-  min-width: 22px;
+  min-height: 20px;
+  min-width: 16px;
 }
 
-/* テキストボックス選択時のフローティング操作バー（テキスト下部に浮かせて表示） */
+/* テキストボックス選択時のフローティング操作バー（中央配置＆コンパクト） */
 .text-box-controls {
   position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
   display: none;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   background: #0f172a;
   color: #ffffff;
-  padding: 4px 6px;
-  border-radius: 8px;
-  box-shadow: var(--shadow-lg);
+  padding: 2px 4px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
   white-space: nowrap;
   z-index: 45;
 }
@@ -687,32 +711,36 @@ button, input, select, textarea {
   display: flex;
 }
 
-/* 画面右端に近いテキストボックスでツールバーが右にはみ出ないようにする補正クラス */
-.text-box-item.align-right .text-box-handle,
+/* 画面端に近いテキストボックスのツールバーはみ出し防止 */
 .text-box-item.align-right .text-box-controls {
   left: auto;
   right: 0;
+  transform: none;
 }
 
-/* 画面上端に近いテキストボックスでハンドルが上にはみ出ないようにする補正クラス */
 .text-box-item.near-top .text-box-handle {
   bottom: auto;
-  top: calc(100% + 4px);
+  top: calc(100% + 2px);
 }
 .text-box-item.near-top .text-box-controls {
-  top: calc(100% + 36px);
+  top: calc(100% + 22px);
 }
 
 .mini-ctrl-btn {
   border: none;
   background: rgba(255, 255, 255, 0.16);
   color: #ffffff;
-  font-size: 0.72rem;
+  font-size: 0.65rem;
   font-weight: 700;
-  padding: 3px 6px;
-  border-radius: 5px;
+  padding: 2px 4px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 4px;
   cursor: pointer;
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .mini-ctrl-btn:hover {
@@ -721,6 +749,10 @@ button, input, select, textarea {
 
 .mini-ctrl-btn.danger {
   background: #ef4444;
+}
+
+.mini-ctrl-btn.danger:hover {
+  background: #dc2626;
 }
 
 .mini-ctrl-btn.nudge {
