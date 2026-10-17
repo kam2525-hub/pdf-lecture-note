@@ -755,6 +755,20 @@ button, input, select, textarea {
   background: #dc2626;
 }
 
+.mini-ctrl-btn.font-size-btn {
+  font-weight: 800;
+  font-size: 0.65rem;
+  letter-spacing: -0.02em;
+  background: rgba(37, 99, 235, 0.45);
+  color: #eff6ff;
+  padding: 2px 5px;
+}
+
+.mini-ctrl-btn.font-size-btn:hover {
+  background: var(--primary);
+  color: #ffffff;
+}
+
 .mini-ctrl-btn.nudge {
   padding: 3px 5px;
   font-size: 0.68rem;

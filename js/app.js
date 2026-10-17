@@ -1030,6 +1030,43 @@ function renderOverlayElements() {
       await autoSaveActiveDocument();
     });
 
+    // 文字サイズ変更（A- / A+）
+    const smallerBtn = document.createElement('button');
+    smallerBtn.className = 'mini-ctrl-btn font-size-btn';
+    smallerBtn.type = 'button';
+    smallerBtn.textContent = 'A-';
+    smallerBtn.title = '文字を小さく';
+    smallerBtn.setAttribute('data-action', 'font-minus');
+    smallerBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      recordHistoryBeforeChange();
+      item.fontSize = clamp((item.fontSize || 16) - 3, 10, 48);
+      state.prefFontSize = item.fontSize;
+      await saveSetting('prefFontSize', state.prefFontSize);
+      renderOverlayElements();
+      renderSubToolbar();
+      await autoSaveActiveDocument();
+      showToast(`🔤 文字サイズ: ${item.fontSize}pt`);
+    });
+
+    const largerBtn = document.createElement('button');
+    largerBtn.className = 'mini-ctrl-btn font-size-btn';
+    largerBtn.type = 'button';
+    largerBtn.textContent = 'A+';
+    largerBtn.title = '文字を大きく';
+    largerBtn.setAttribute('data-action', 'font-plus');
+    largerBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      recordHistoryBeforeChange();
+      item.fontSize = clamp((item.fontSize || 16) + 3, 10, 48);
+      state.prefFontSize = item.fontSize;
+      await saveSetting('prefFontSize', state.prefFontSize);
+      renderOverlayElements();
+      renderSubToolbar();
+      await autoSaveActiveDocument();
+      showToast(`🔤 文字サイズ: ${item.fontSize}pt`);
+    });
+
     // 位置微調整（スマホで指で隠れずに細かく動かせる）
     const createNudgeBtn = (label, dxNorm, dyNorm) => {
       const btn = document.createElement('button');
@@ -1072,15 +1109,16 @@ function renderOverlayElements() {
       await autoSaveActiveDocument();
     });
 
-    ctrls.append(toggleDirBtn, leftBtn, upBtn, downBtn, rightBtn, delTxtBtn);
+    ctrls.append(toggleDirBtn, smallerBtn, largerBtn, leftBtn, upBtn, downBtn, rightBtn, delTxtBtn);
     box.appendChild(ctrls);
 
     // 3. テキスト編集本体
     const contentEl = document.createElement('div');
     contentEl.className = 'text-box-content';
     contentEl.contentEditable = state.redSheetActive ? 'false' : 'true';
-    const scaledFontPx = Math.max(10, Math.round(((item.fontSize || 16) / 595.28) * w));
-    contentEl.style.fontSize = `${scaledFontPx}px`;
+    const scale = w / 595.28;
+    const scaledFontPx = Math.max(8, ((item.fontSize || 16) * scale));
+    contentEl.style.fontSize = `${scaledFontPx.toFixed(1)}px`;
     contentEl.style.color = item.color || '#1e293b';
     contentEl.textContent = item.content || '';
 
@@ -1688,7 +1726,8 @@ function renderSubToolbar() {
 
     const hBtn = document.createElement('button');
     hBtn.className = `writing-mode-btn ${curMode !== 'vertical' ? 'active' : ''}`;
-    hBtn.textContent = '↔ 横書き';
+    hBtn.textContent = '↔ 横';
+    hBtn.title = '横書き';
     hBtn.addEventListener('click', async () => {
       state.prefWritingMode = 'horizontal';
       await saveSetting('prefWritingMode', 'horizontal');
@@ -1703,7 +1742,8 @@ function renderSubToolbar() {
 
     const vBtn = document.createElement('button');
     vBtn.className = `writing-mode-btn ${curMode === 'vertical' ? 'active' : ''}`;
-    vBtn.textContent = '↕ 縦書き';
+    vBtn.textContent = '↕ 縦';
+    vBtn.title = '縦書き';
     vBtn.addEventListener('click', async () => {
       state.prefWritingMode = 'vertical';
       await saveSetting('prefWritingMode', 'vertical');
@@ -1719,6 +1759,58 @@ function renderSubToolbar() {
     switchWrap.append(hBtn, vBtn);
     modeGroup.appendChild(switchWrap);
     bar.appendChild(modeGroup);
+
+    // 文字サイズ変更（スマホでもスクロールせずすぐ押せるよう先頭近くに配置）
+    const sizeGroup = document.createElement('div');
+    sizeGroup.className = 'tool-option-group';
+    const curSize = selectedTextObj ? selectedTextObj.fontSize : state.prefFontSize;
+
+    const sizeLabel = document.createElement('span');
+    sizeLabel.textContent = `${curSize}pt`;
+    sizeLabel.style.fontWeight = '700';
+    sizeLabel.style.minWidth = '36px';
+    sizeLabel.style.textAlign = 'center';
+
+    const minusBtn = document.createElement('button');
+    minusBtn.className = 'btn';
+    minusBtn.style.padding = '3px 8px';
+    minusBtn.textContent = '－';
+    minusBtn.title = '文字を小さく';
+    minusBtn.addEventListener('click', async () => {
+      const next = clamp(curSize - 3, 10, 48);
+      state.prefFontSize = next;
+      await saveSetting('prefFontSize', next);
+      if (selectedTextObj) {
+        recordHistoryBeforeChange();
+        selectedTextObj.fontSize = next;
+        renderOverlayElements();
+        await autoSaveActiveDocument();
+        showToast(`🔤 文字サイズ: ${next}pt`);
+      }
+      renderSubToolbar();
+    });
+
+    const plusBtn = document.createElement('button');
+    plusBtn.className = 'btn';
+    plusBtn.style.padding = '3px 8px';
+    plusBtn.textContent = '＋';
+    plusBtn.title = '文字を大きく';
+    plusBtn.addEventListener('click', async () => {
+      const next = clamp(curSize + 3, 10, 48);
+      state.prefFontSize = next;
+      await saveSetting('prefFontSize', next);
+      if (selectedTextObj) {
+        recordHistoryBeforeChange();
+        selectedTextObj.fontSize = next;
+        renderOverlayElements();
+        await autoSaveActiveDocument();
+        showToast(`🔤 文字サイズ: ${next}pt`);
+      }
+      renderSubToolbar();
+    });
+
+    sizeGroup.append(minusBtn, sizeLabel, plusBtn);
+    bar.appendChild(sizeGroup);
 
     // 文字色パレット
     const colorGroup = document.createElement('div');
@@ -1747,52 +1839,6 @@ function renderSubToolbar() {
       colorGroup.appendChild(sw);
     }
     bar.appendChild(colorGroup);
-
-    // 文字サイズ変更
-    const sizeGroup = document.createElement('div');
-    sizeGroup.className = 'tool-option-group';
-    const curSize = selectedTextObj ? selectedTextObj.fontSize : state.prefFontSize;
-
-    const sizeLabel = document.createElement('span');
-    sizeLabel.textContent = `サイズ:${curSize}pt`;
-    sizeLabel.style.fontWeight = '600';
-
-    const minusBtn = document.createElement('button');
-    minusBtn.className = 'btn';
-    minusBtn.style.padding = '3px 8px';
-    minusBtn.textContent = '－';
-    minusBtn.addEventListener('click', async () => {
-      const next = clamp(curSize - 2, 10, 42);
-      state.prefFontSize = next;
-      await saveSetting('prefFontSize', next);
-      if (selectedTextObj) {
-        recordHistoryBeforeChange();
-        selectedTextObj.fontSize = next;
-        renderOverlayElements();
-        await autoSaveActiveDocument();
-      }
-      renderSubToolbar();
-    });
-
-    const plusBtn = document.createElement('button');
-    plusBtn.className = 'btn';
-    plusBtn.style.padding = '3px 8px';
-    plusBtn.textContent = '＋';
-    plusBtn.addEventListener('click', async () => {
-      const next = clamp(curSize + 2, 10, 42);
-      state.prefFontSize = next;
-      await saveSetting('prefFontSize', next);
-      if (selectedTextObj) {
-        recordHistoryBeforeChange();
-        selectedTextObj.fontSize = next;
-        renderOverlayElements();
-        await autoSaveActiveDocument();
-      }
-      renderSubToolbar();
-    });
-
-    sizeGroup.append(minusBtn, sizeLabel, plusBtn);
-    bar.appendChild(sizeGroup);
 
     if (selectedTextObj) {
       const nudgeGroup = document.createElement('div');

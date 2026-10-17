@@ -81,13 +81,33 @@ export async function runUiE2E() {
     await sleep(50);
     assert(firstContent.innerText === '更新後のメモ入力テスト', 'Text input successfully updates box content');
 
-    // 3-2. 微調整矢印ボタンでの移動検証
-    const initialLeft = parseFloat(firstBox.style.left);
-    const nudgeRightBtn = /** @type {HTMLElement | null} */ (firstBox.querySelector('[data-action="nudge-right"]'));
+    // 3-2. 文字サイズ変更ボタン（A- / A+）の検証
+    const initialFontSize = parseFloat(firstContent.style.fontSize);
+    const fontPlusBtn = /** @type {HTMLElement | null} */ (firstBox.querySelector('[data-action="font-plus"]'));
+    assert(Boolean(fontPlusBtn), 'Font plus (A+) button exists on text box controls');
+    fontPlusBtn?.click();
+    await sleep(50);
+    let currentBox = /** @type {HTMLElement} */ (document.querySelectorAll('.text-box-item')[0]);
+    let currentContent = /** @type {HTMLElement} */ (currentBox.querySelector('.text-box-content'));
+    const increasedFontSize = parseFloat(currentContent.style.fontSize);
+    assert(increasedFontSize > initialFontSize, 'Clicking A+ button increases text font size on screen');
+
+    const fontMinusBtn = /** @type {HTMLElement | null} */ (currentBox.querySelector('[data-action="font-minus"]'));
+    assert(Boolean(fontMinusBtn), 'Font minus (A-) button exists on text box controls');
+    fontMinusBtn?.click();
+    await sleep(50);
+    currentBox = /** @type {HTMLElement} */ (document.querySelectorAll('.text-box-item')[0]);
+    currentContent = /** @type {HTMLElement} */ (currentBox.querySelector('.text-box-content'));
+    const decreasedFontSize = parseFloat(currentContent.style.fontSize);
+    assert(decreasedFontSize < increasedFontSize, 'Clicking A- button decreases text font size on screen');
+
+    // 3-3. 微調整矢印ボタンでの移動検証
+    const initialLeft = parseFloat(currentBox.style.left);
+    const nudgeRightBtn = /** @type {HTMLElement | null} */ (currentBox.querySelector('[data-action="nudge-right"]'));
     assert(Boolean(nudgeRightBtn), 'Nudge right button exists');
     nudgeRightBtn?.click();
     await sleep(50);
-    const nudgedLeft = parseFloat(firstBox.style.left);
+    const nudgedLeft = parseFloat(currentBox.style.left);
     assert(nudgedLeft > initialLeft, 'Nudge right button moves text box to the right');
 
     // 3-3. 2本指ピンチズームジェスチャー＆余白・スクロール領域同期の検証
