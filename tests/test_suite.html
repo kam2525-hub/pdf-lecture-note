@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Automated Test Suite</title>
+  <script src="../vendor/pdf-lib.min.js"></script>
+  <script src="../vendor/fontkit.umd.min.js"></script>
+</head>
+<body>
+  <pre id="test-output">Running tests...</pre>
+  <script type="module">
+    import {
+      clamp,
+      screenToNormalized,
+      normalizedToPdfPoint,
+      layoutVerticalTextForPdf,
+      isRedSheetTargetText,
+      isRedSheetTargetStroke,
+      HistoryManager,
+      searchDocuments,
+      extractStampedPages,
+      generateAiStudyPrompt,
+    } from '../js/models.js';
+    import {
+      initDB,
+      getAllSubjects,
+      saveSubject,
+      getAllDocuments,
+      saveDocument,
+      deleteDocument,
+      getSetting,
+      saveSetting,
+    } from '../js/db.js';
+    import {
+      createSampleHandoutPdfBytes,
+      parsePdfDocument,
+      exportAnnotatedPdf,
+    } from '../js/pdf-engine.js';
+
+    const results = [];
+    function assert(condition, name, detail = '') {
+      if (!condition) {
+        results.push({ name, passed: false, detail });
+        throw new Error(`FAIL: ${name} ${detail}`);
+      }
+      results.push({ name, passed: true });
+    }
+
+    async function runAllTests() {
+      const outEl = document.getElementById('test-output');
+      try {
+        // 1. 境界値・異常値テスト (clamp / 座標変換)
+        assert(clamp(5, 0, 10) === 5, 'clamp normal value');
+        assert(clamp(-5, 0, 10) === 0, 'clamp lower boundary');
+        assert(clamp(15, 0, 10) === 10, 'clamp upper boundary');
+        assert(clamp(NaN, 0, 10) === 0, 'clamp NaN fallback');
+
+        const normCenter = screenToNormalized(100, 200, 200, 400);
+        assert(Math.abs(normCenter.xNorm - 0.5) < 1e-6 && Math.abs(normCenter.yNorm - 0.5) < 1e-6, 'screenToNormalized center');
+
+        const normOut = screenToNormalized(-50, 900, 200, 400);
+        assert(normOut.xNorm === 0 && normOut.yNorm === 1, 'screenToNormalized out-of-bounds clamp');
+
+        let invalidDimCaught = false;
+        try {
+          screenToNormalized(10, 10, 0, 100);
+        } catch {
+          invalidDimCaught = true;
+        }
+        assert(invalidDimCaught, 'screenToNormalized rejects zero canvas width');
+
+        const pdfPt = normalizedToPdfPoint(0.25, 0.2, 600, 800);
+        assert(Math.abs(pdfPt.x - 150) < 1e-6 && Math.abs(pdfPt.y - 640) < 1e-6, 'normalizedToPdfPoint Y-inversion');
+
+        // 2. 縦書きレイアウト計算テスト (正常系・複数列・長音回転・句読点・空文字)
+        assert(layoutVerticalTextForPdf('', 100, 700, 16).length === 0, 'layoutVerticalTextForPdf empty string');
+        const vLayout = layoutVerticalTextForPdf('あー。\nい', 100, 700, 16);
+        assert(vLayout.length === 4, 'layoutVerticalTextForPdf char count');
+        // 1列目('あ')は2列目('い')より右(Xが大きい)にあること
+        const firstColChar = vLayout[0];
+        const secondColChar = vLayout[3];
+        assert(firstColChar.x > secondColChar.x, 'layoutVerticalTextForPdf right-to-left column order');
+        // 長音符「ー」は回転が -90 度であること
+        const choon = vLayout[1];
+        assert(choon.rotateDeg === -90, 'layoutVerticalTextForPdf elongation mark rotation');
+        // 句読点「。」は右上にオフセットされていること
+        const kutouten = vLayout[2];
+        assert(kutouten.x > firstColChar.x, 'layoutVerticalTextForPdf punctuation offset');
+
+        // 3. デジタル赤シート対象判定テスト
+        assert(isRedSheetTargetText({ color: '#ef4444' }) === true, 'Red text is red-sheet target');
+        assert(isRedSheetTargetText({ color: '#f97316' }) === true, 'Orange text is red-sheet target');
+        assert(isRedSheetTargetText({ color: '#1e293b' }) === false, 'Black text is not red-sheet target');
+        assert(isRedSheetTargetStroke({ color: '#10b981' }) === true, 'Green memorize marker is red-sheet target');
+        assert(isRedSheetTargetStroke({ color: '#fde047' }) === false, 'Yellow marker is not red-sheet target');
+
+        // 4. Undo / Redo 状態遷移テスト (初期状態 → 記録 → Undo → Redo → 新規記録でRedoクリア → 上限超過)
+        const hist = new HistoryManager(3);
+        const s0 = { texts: [], strokes: [], stamps: [] };
+        const s1 = { texts: [{ id: 't1', content: 'A' }], strokes: [], stamps: [] };
+        const s2 = { texts: [{ id: 't1', content: 'AB' }], strokes: [], stamps: [] };
+        assert(!hist.canUndo() && !hist.canRedo(), 'History initial state');
+        hist.record(s0);
+        assert(hist.canUndo() && !hist.canRedo(), 'History after 1 record');
+        hist.record(s1);
+        const undone1 = hist.undo(s2);
+        assert(undone1.texts.length === 1 && undone1.texts[0].content === 'A', 'History undo to s1');
+        assert(hist.canRedo(), 'History canRedo after undo');
+        const redone1 = hist.redo(undone1);
+        assert(redone1.texts[0].content === 'AB', 'History redo to s2');
+        // 再度undoしてから新しい操作を記録するとredoStackが空になること
+        const backToS1 = hist.undo(redone1);
+        hist.record(backToS1);
+        assert(!hist.canRedo(), 'History redoStack cleared on new action');
+
+        // 5. 横断検索・重要スタンプ抽出・AIプロンプト生成テスト
+        const sampleDocs = [
+          {
+            id: 'd1',
+            title: '古典プリント',
+            subjectId: 'kokugo',
+            pages: [
+              {
+                extractedText: '春はあけぼの。やうやう白くなりゆく山際',
+                annotations: {
+                  texts: [{ content: '清少納言・枕草子', color: '#ef4444', writingMode: 'vertical' }],
+                  stamps: [{ stampId: 'star' }],
+                },
+              },
+              {
+                extractedText: '夏は夜。月のころはさらなり',
+                annotations: {
+                  texts: [{ content: 'さらなり＝言うまでもない', color: '#1e293b', writingMode: 'horizontal' }],
+                  stamps: [{ stampId: 'question' }],
+                },
+              },
+            ],
+          },
+        ];
+
+        const searchHitMemo = searchDocuments(sampleDocs, '清少納言', 'all');
+        assert(searchHitMemo.length === 1 && searchHitMemo[0].pageMatches[0].source === 'memo', 'Search hits user memo');
+
+        const searchHitPdf = searchDocuments(sampleDocs, '山際', 'kokugo');
+        assert(searchHitPdf.length === 1 && searchHitPdf[0].pageMatches[0].source === 'pdf', 'Search hits extracted PDF text');
+
+        const starPages = extractStampedPages(sampleDocs, 'star', 'all');
+        assert(starPages.length === 1 && starPages[0].pageNumber === 1, 'Extract star pages');
+
+        const questionPages = extractStampedPages(sampleDocs, 'question', 'all');
+        assert(questionPages.length === 1 && questionPages[0].pageNumber === 2, 'Extract question pages');
+
+        const quizPrompt = generateAiStudyPrompt(sampleDocs[0], 'quiz', '国語');
+        assert(quizPrompt.includes('清少納言・枕草子') && quizPrompt.includes('[赤字・暗記重要]'), 'AI quiz prompt contains red memo');
+
+        // 6. IndexedDB 保存・取得テスト
+        await initDB();
+        const subjects = await getAllSubjects();
+        assert(subjects.length >= 5, 'Default subjects initialized');
+        await saveSetting('testKey', 'testVal');
+        const loadedSetting = await getSetting('testKey', null);
+        assert(loadedSetting === 'testVal', 'Setting saved and loaded');
+
+        // 7. PDF生成・解析・縦書き＆横書き＆白紙ページ統合PDF出力テスト (E2E)
+        const samplePdfBytes = await createSampleHandoutPdfBytes();
+        assert(samplePdfBytes.byteLength > 1000, 'Sample PDF generated with Japanese font');
+        const parsed = await parsePdfDocument(samplePdfBytes);
+        assert(parsed.numPages === 2, 'Parsed sample PDF has 2 pages');
+
+        // 1ページ目に縦書き・横書き・マーカー・スタンプを入れ、さらに白紙ページを挿入して出力テスト
+        parsed.pages[0].annotations.texts.push({
+          id: 't_v',
+          xNorm: 0.8,
+          yNorm: 0.2,
+          content: '縦書きテスト\n長音ー句読点。',
+          color: '#ef4444',
+          fontSize: 16,
+          writingMode: 'vertical',
+        });
+        parsed.pages.push({
+          id: 'p_blank',
+          type: 'blank',
+          sourcePdfPageIndex: null,
+          template: 'vertical-ruled',
+          width: 595.28,
+          height: 841.89,
+          extractedText: '',
+          annotations: { texts: [], strokes: [], stamps: [] },
+        });
+
+        const exportedBytes = await exportAnnotatedPdf({
+          id: 'doc_e2e',
+          title: 'E2Eテスト',
+          pdfBytes: samplePdfBytes,
+          pages: parsed.pages,
+        });
+        assert(exportedBytes.byteLength > samplePdfBytes.byteLength, 'Exported annotated PDF has valid byte size');
+        const reparsed = await parsePdfDocument(exportedBytes);
+        assert(reparsed.numPages === 3, 'Exported PDF has 3 pages (2 original + 1 inserted blank page)');
+
+        const payload = { status: 'ALL_PASSED', total: results.length, results };
+        outEl.textContent = JSON.stringify(payload, null, 2);
+        await fetch('/__test_result__', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      } catch (err) {
+        const payload = {
+          status: 'FAILED',
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : '',
+          results,
+        };
+        outEl.textContent = JSON.stringify(payload, null, 2);
+        await fetch('/__test_result__', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+    }
+
+    window.addEventListener('error', (e) => {
+      fetch('/__test_result__', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'UNCAUGHT_ERROR', error: e.message, filename: e.filename, lineno: e.lineno }),
+      });
+    });
+
+    runAllTests();
+  </script>
+</body>
+</html>

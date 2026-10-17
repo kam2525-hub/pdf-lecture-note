@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#2563eb" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="授業プリント暗記" />
+  <title>スマート授業プリント＆AI暗記ノート</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./css/styles.css" />
+</head>
+<body>
+
+  <!-- ==================== 1. ホーム画面（教科別フォルダ・検索・重要抽出） ==================== -->
+  <section id="home-screen" class="screen">
+    <header class="home-header">
+      <div class="home-title-row">
+        <div class="app-brand">
+          <span>🎓</span>
+          <span>授業プリント＆AI暗記ノート</span>
+        </div>
+        <div class="home-actions">
+          <input type="file" id="pdf-file-input" accept="application/pdf" class="hidden" />
+          <button id="btn-upload-pdf" class="btn btn-primary">📥 PDF取込</button>
+          <button id="btn-new-notebook" class="btn">📓 白紙ノート</button>
+          <button id="btn-create-sample" class="btn btn-accent">✨ サンプルで試す</button>
+        </div>
+      </div>
+
+      <!-- 全プリント横断検索バー -->
+      <div class="search-bar-wrap">
+        <span class="search-icon">🔍</span>
+        <input
+          type="search"
+          id="search-input"
+          class="search-input"
+          placeholder="全プリントの本文・自分のメモからキーワード検索..."
+        />
+        <button id="search-clear-btn" class="search-clear-btn" title="クリア">×</button>
+      </div>
+    </header>
+
+    <!-- 教科別タブバー -->
+    <nav id="subject-pills-bar" class="subject-pills-bar" aria-label="教科選択"></nav>
+
+    <!-- 表示モード切替タブ（プリント一覧 / ★重要まとめ / ？不明まとめ） -->
+    <div class="view-mode-tabs">
+      <button class="view-tab active" data-view-mode="documents">📄 プリント・ノート一覧</button>
+      <button class="view-tab" data-view-mode="star">⭐ ★重要（テスト出る）まとめ</button>
+      <button class="view-tab" data-view-mode="question">❓ ？不明（要復習）まとめ</button>
+    </div>
+
+    <!-- メインリスト領域 -->
+    <main id="home-content" class="home-content"></main>
+  </section>
+
+  <!-- ==================== 2. エディタ画面（PDF書き込み・赤シート・AI勉強） ==================== -->
+  <section id="editor-screen" class="screen hidden">
+    <!-- 上部ヘッダー -->
+    <header class="editor-header">
+      <div class="editor-header-left">
+        <button id="btn-back-home" class="btn" title="一覧へ戻る">◀ 一覧</button>
+        <input type="text" id="doc-title-input" class="doc-title-input" aria-label="プリント名" />
+        <span id="save-status" class="save-status">✓ 自動保存済</span>
+      </div>
+      <div class="editor-header-right">
+        <button id="btn-red-sheet" class="btn btn-red-sheet">🈴 赤シート</button>
+        <button id="btn-open-ai" class="btn btn-ai">🤖 AI勉強</button>
+        <button id="btn-export-pdf" class="btn btn-primary">💾 PDF保存</button>
+      </div>
+    </header>
+
+    <!-- サブツールバー（横書き⇔縦書き・文字色・サイズ・直線モード・スタンプ選択） -->
+    <div id="sub-toolbar" class="sub-toolbar"></div>
+
+    <!-- 中央PDF・ノート描画ステージ -->
+    <div id="viewer-container" class="viewer-container">
+      <div id="page-stage" class="page-stage">
+        <canvas id="pdf-canvas" class="pdf-canvas"></canvas>
+        <canvas id="drawing-canvas" class="drawing-canvas interactive"></canvas>
+        <div id="overlay-layer" class="overlay-layer"></div>
+      </div>
+    </div>
+
+    <!-- ページ送り・白紙ページ挿入・拡大縮小バー -->
+    <div class="page-nav-bar">
+      <div class="page-nav-controls">
+        <button id="btn-prev-page" class="btn" style="padding: 4px 10px;">◀ 前へ</button>
+        <span id="page-indicator" style="font-weight: 700;">1 / 1 ページ</span>
+        <button id="btn-next-page" class="btn" style="padding: 4px 10px;">次へ ▶</button>
+        <button id="btn-open-blank-modal" class="btn btn-accent" style="padding: 4px 10px;">＋ 白紙ページ挿入</button>
+      </div>
+      <div class="page-nav-controls">
+        <button id="btn-zoom-out" class="btn" style="padding: 4px 9px;" title="縮小">－</button>
+        <button id="btn-zoom-in" class="btn" style="padding: 4px 9px;" title="拡大">＋</button>
+      </div>
+    </div>
+
+    <!-- 下部メインツールバー -->
+    <nav class="main-toolbar" aria-label="書き込みツール">
+      <button class="tool-btn" data-tool="pan">
+        <span class="icon">👆</span>
+        <span>移動/拡大</span>
+      </button>
+      <button class="tool-btn active" data-tool="text">
+        <span class="icon">🔤</span>
+        <span>文字入力</span>
+      </button>
+      <button class="tool-btn" data-tool="marker">
+        <span class="icon">🖍️</span>
+        <span>マーカー</span>
+      </button>
+      <button class="tool-btn" data-tool="pen">
+        <span class="icon">✒️</span>
+        <span>ペン</span>
+      </button>
+      <button class="tool-btn" data-tool="stamp">
+        <span class="icon">⭐</span>
+        <span>スタンプ</span>
+      </button>
+      <button class="tool-btn" data-tool="eraser">
+        <span class="icon">🧹</span>
+        <span>消しゴム</span>
+      </button>
+      <button id="btn-undo" class="tool-btn" disabled>
+        <span class="icon">↩️</span>
+        <span>戻す</span>
+      </button>
+      <button id="btn-redo" class="tool-btn" disabled>
+        <span class="icon">↪️</span>
+        <span>進む</span>
+      </button>
+    </nav>
+  </section>
+
+  <!-- ==================== 3. 白紙ノートページ挿入モーダル ==================== -->
+  <div id="blank-page-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span>📓 現在のページの次に白紙ノートを挿入</span>
+        <button id="btn-close-blank-modal" class="btn" style="padding: 4px 9px;">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin: 0; font-size: 0.86rem; color: var(--text-sub);">
+          プリントに書く余白が足りないとき、途中にノートページを差し込めます（PDF保存時にも一緒に統合されます）。
+        </p>
+        <button class="btn" data-blank-template="vertical-ruled" style="justify-content: flex-start; padding: 12px;">
+          📖 国語・古典用「縦罫線ノート」を挿入
+        </button>
+        <button class="btn" data-blank-template="grid" style="justify-content: flex-start; padding: 12px;">
+          📐 数学・理科用「5mm方眼ノート」を挿入
+        </button>
+        <button class="btn" data-blank-template="ruled" style="justify-content: flex-start; padding: 12px;">
+          📝 英語・社会用「横罫線ノート」を挿入
+        </button>
+        <button class="btn" data-blank-template="plain" style="justify-content: flex-start; padding: 12px;">
+          ⬜ 自由メモ・図形用「無地ページ」を挿入
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== 4. AIテスト勉強プロンプト生成モーダル ==================== -->
+  <div id="ai-study-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span>🤖 AIテスト対策・問題作成プロンプト生成</span>
+        <button id="btn-close-ai-modal" class="btn" style="padding: 4px 9px;">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <button class="btn btn-primary" data-ai-mode="quiz">🎯 赤字・★から予想問題作成</button>
+          <button class="btn" data-ai-mode="explain">💡 ？不明箇所を解説させる</button>
+          <button class="btn" data-ai-mode="summary">📋 3分要点まとめ作成</button>
+        </div>
+        <p style="margin: 0; font-size: 0.8rem; color: var(--text-sub);">
+          元のPDF本文＋あなたが書き込んだメモ（赤字や★・？マーク）が自動整理されています。下のボタンを押してChatGPTやGeminiに貼り付けるだけで勉強できます！
+        </p>
+        <textarea id="ai-prompt-textarea" class="prompt-textarea" readonly></textarea>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-copy-ai-prompt" class="btn btn-primary" style="width: 100%; padding: 11px;">
+          📋 ワンタップで指示文＋プリント内容をコピーする
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- トースト通知領域 -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- PDF出力・日本語フォント埋め込み用ライブラリ -->
+  <script src="./vendor/pdf-lib.min.js"></script>
+  <script src="./vendor/fontkit.umd.min.js"></script>
+  <!-- アプリ本体 (ES Modules) -->
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

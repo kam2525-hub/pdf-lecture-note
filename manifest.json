@@ -1,0 +1,10 @@
+{
+  "name": "スマート授業プリント＆AI暗記ノート",
+  "short_name": "授業プリント暗記",
+  "description": "PDFプリントへの横書き・縦書きテキスト入力、手書きマーカー、デジタル赤シート、AIテスト対策プロンプト生成アプリ",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#2563eb",
+  "orientation": "any"
+}
