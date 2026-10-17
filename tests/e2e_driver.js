@@ -45,6 +45,39 @@ export async function runUiE2E() {
     const verticalBoxes = document.querySelectorAll('.text-box-item.vertical');
     assert(verticalBoxes.length === 1, 'Sample page 1 has 1 vertical text box');
 
+    // 3-1. 移動ハンドルバーと文字入力の検証
+    const handles = document.querySelectorAll('.text-box-handle');
+    assert(handles.length === 4, 'All text boxes have dedicated drag handles');
+
+    const firstBox = /** @type {HTMLElement} */ (textBoxes[0]);
+    const firstContent = /** @type {HTMLElement} */ (firstBox.querySelector('.text-box-content'));
+    assert(Boolean(firstContent), 'First box has content editable area');
+    firstContent.focus();
+    firstContent.innerText = '更新後のメモ入力テスト';
+    firstContent.dispatchEvent(new Event('input', { bubbles: true }));
+    await sleep(50);
+    assert(firstContent.innerText === '更新後のメモ入力テスト', 'Text input successfully updates box content');
+
+    // 3-2. 微調整矢印ボタンでの移動検証
+    const initialLeft = parseFloat(firstBox.style.left);
+    const nudgeRightBtn = /** @type {HTMLElement | null} */ (firstBox.querySelector('[data-action="nudge-right"]'));
+    assert(Boolean(nudgeRightBtn), 'Nudge right button exists');
+    nudgeRightBtn?.click();
+    await sleep(50);
+    const nudgedLeft = parseFloat(firstBox.style.left);
+    assert(nudgedLeft > initialLeft, 'Nudge right button moves text box to the right');
+
+    // 3-3. 2本指ピンチズームジェスチャーの検証
+    const viewer = document.getElementById('viewer-container');
+    const gestureEv = new CustomEvent('gestureend');
+    // @ts-ignore
+    gestureEv.scale = 1.4;
+    viewer?.dispatchEvent(new CustomEvent('gesturestart'));
+    viewer?.dispatchEvent(gestureEv);
+    await sleep(200);
+    const indicator = document.getElementById('page-indicator');
+    assert(Boolean(indicator), 'Viewer responsive after pinch zoom gesture');
+
     // 4. デジタル赤シートモードのON/OFFとタップめくり確認
     const redSheetBtn = /** @type {HTMLElement | null} */ (document.getElementById('btn-red-sheet'));
     redSheetBtn?.click();

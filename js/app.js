@@ -935,18 +935,47 @@ function renderOverlayElements() {
     box.className = `text-box-item ${isVertical ? 'vertical' : 'horizontal'} ${
       isSelected ? 'selected' : ''
     } ${redSheetClass}`.trim();
+    box.setAttribute('data-id', item.id);
 
     box.style.left = `${Math.round(item.xNorm * w)}px`;
     box.style.top = `${Math.round(item.yNorm * h)}px`;
 
-    // テキストボックス上部のフローティング操作バー（横書き⇔縦書き切替・サイズ・削除）
+    // 1. ドラッグ移動ハンドルバー（上部バー）
+    const handleEl = document.createElement('div');
+    handleEl.className = 'text-box-handle';
+
+    const handleTitle = document.createElement('div');
+    handleTitle.className = 'handle-title-wrap';
+    handleTitle.innerHTML = '<span class="handle-icon">✥</span><span>移動</span>';
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'handle-edit-btn';
+    editBtn.type = 'button';
+    editBtn.textContent = '✏️ 入力';
+    editBtn.title = '文字を入力・編集';
+    editBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.selectedTextId = item.id;
+      renderOverlayElements();
+      renderSubToolbar();
+      const content = /** @type {HTMLElement | null} */ (box.querySelector('.text-box-content'));
+      content?.focus();
+    });
+
+    handleEl.append(handleTitle, editBtn);
+    box.appendChild(handleEl);
+
+    // 2. テキストボックス上部のフローティング操作バー（横書き⇔縦書き切替・微調整・サイズ・削除）
     const ctrls = document.createElement('div');
     ctrls.className = 'text-box-controls';
     ctrls.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     const toggleDirBtn = document.createElement('button');
     toggleDirBtn.className = 'mini-ctrl-btn';
-    toggleDirBtn.textContent = isVertical ? '🔄 横書きへ' : '🔄 縦書きへ';
+    toggleDirBtn.type = 'button';
+    toggleDirBtn.textContent = isVertical ? '🔄 横' : '🔄 縦';
+    toggleDirBtn.title = '横書き・縦書き切り替え';
     toggleDirBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       recordHistoryBeforeChange();
@@ -958,8 +987,36 @@ function renderOverlayElements() {
       await autoSaveActiveDocument();
     });
 
+    // 位置微調整（スマホで指で隠れずに細かく動かせる）
+    const createNudgeBtn = (label, dxNorm, dyNorm) => {
+      const btn = document.createElement('button');
+      btn.className = 'mini-ctrl-btn nudge';
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        recordHistoryBeforeChange();
+        item.xNorm = clamp(item.xNorm + dxNorm, 0.01, 0.95);
+        item.yNorm = clamp(item.yNorm + dyNorm, 0.01, 0.95);
+        box.style.left = `${Math.round(item.xNorm * w)}px`;
+        box.style.top = `${Math.round(item.yNorm * h)}px`;
+        await autoSaveActiveDocument();
+      });
+      return btn;
+    };
+
+    const leftBtn = createNudgeBtn('◀', -0.012, 0);
+    leftBtn.setAttribute('data-action', 'nudge-left');
+    const upBtn = createNudgeBtn('▲', 0, -0.012);
+    upBtn.setAttribute('data-action', 'nudge-up');
+    const downBtn = createNudgeBtn('▼', 0, 0.012);
+    downBtn.setAttribute('data-action', 'nudge-down');
+    const rightBtn = createNudgeBtn('▶', 0.012, 0);
+    rightBtn.setAttribute('data-action', 'nudge-right');
+
     const smallerBtn = document.createElement('button');
     smallerBtn.className = 'mini-ctrl-btn';
+    smallerBtn.type = 'button';
     smallerBtn.textContent = 'A-';
     smallerBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -974,6 +1031,7 @@ function renderOverlayElements() {
 
     const largerBtn = document.createElement('button');
     largerBtn.className = 'mini-ctrl-btn';
+    largerBtn.type = 'button';
     largerBtn.textContent = 'A+';
     largerBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -988,6 +1046,7 @@ function renderOverlayElements() {
 
     const delTxtBtn = document.createElement('button');
     delTxtBtn.className = 'mini-ctrl-btn danger';
+    delTxtBtn.type = 'button';
     delTxtBtn.textContent = '削除';
     delTxtBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -998,10 +1057,10 @@ function renderOverlayElements() {
       await autoSaveActiveDocument();
     });
 
-    ctrls.append(toggleDirBtn, smallerBtn, largerBtn, delTxtBtn);
+    ctrls.append(toggleDirBtn, leftBtn, upBtn, downBtn, rightBtn, smallerBtn, largerBtn, delTxtBtn);
     box.appendChild(ctrls);
 
-    // テキスト編集本体
+    // 3. テキスト編集本体
     const contentEl = document.createElement('div');
     contentEl.className = 'text-box-content';
     contentEl.contentEditable = state.redSheetActive ? 'false' : 'true';
@@ -1009,6 +1068,18 @@ function renderOverlayElements() {
     contentEl.style.fontSize = `${scaledFontPx}px`;
     contentEl.style.color = item.color || '#1e293b';
     contentEl.textContent = item.content || '';
+
+    // タップ・クリックで選択
+    contentEl.addEventListener('click', (e) => {
+      if (state.redSheetActive) return;
+      e.stopPropagation();
+      if (state.selectedTextId !== item.id) {
+        state.selectedTextId = item.id;
+        document.querySelectorAll('.text-box-item').forEach((el) => el.classList.remove('selected'));
+        box.classList.add('selected');
+        renderSubToolbar();
+      }
+    });
 
     let beforeEditSnapshotRecorded = false;
     contentEl.addEventListener('focus', () => {
@@ -1032,24 +1103,21 @@ function renderOverlayElements() {
 
     box.appendChild(contentEl);
 
-    // 赤シートモード時のタップ開閉、または通常時のドラッグ移動
-    attachDragBehavior(box, item, async () => {
-      if (state.redSheetActive && isRedTarget) {
-        item.revealedInRedSheet = !item.revealedInRedSheet;
-        renderOverlayElements();
-        return;
-      }
-      if (state.currentTool === 'eraser') {
-        recordHistoryBeforeChange();
-        pageMeta.annotations.texts = pageMeta.annotations.texts.filter((t) => t.id !== item.id);
-        renderOverlayElements();
-        await autoSaveActiveDocument();
-        return;
-      }
+    // ハンドルバーにドラッグ移動を付与
+    attachDragBehavior(handleEl, item, () => {
       state.selectedTextId = item.id;
       document.querySelectorAll('.text-box-item').forEach((el) => el.classList.remove('selected'));
       box.classList.add('selected');
       renderSubToolbar();
+    }, box);
+
+    // 赤シートモード時はボックス全体のタップで開閉
+    box.addEventListener('click', (e) => {
+      if (state.redSheetActive && isRedTarget) {
+        e.stopPropagation();
+        item.revealedInRedSheet = !item.revealedInRedSheet;
+        renderOverlayElements();
+      }
     });
 
     overlay.appendChild(box);
@@ -1057,12 +1125,14 @@ function renderOverlayElements() {
 }
 
 /**
- * 要素（テキストボックス・スタンプ）のドラッグ移動とタップ処理を付与する
- * @param {HTMLElement} el
- * @param {{ xNorm: number, yNorm: number }} dataItem
- * @param {() => void} onTapCallback
+ * 要素（テキストボックスハンドル・スタンプ）のドラッグ移動とタップ処理を付与する
+ * @param {HTMLElement} handleEl ドラッグの起点となる要素
+ * @param {{ xNorm: number, yNorm: number }} dataItem データオブジェクト
+ * @param {() => void} [onTapCallback] タップ時のコールバック
+ * @param {HTMLElement | null} [targetMoveEl=null] 実際に移動させる要素（nullならhandleEl自体）
  */
-function attachDragBehavior(el, dataItem, onTapCallback) {
+function attachDragBehavior(handleEl, dataItem, onTapCallback, targetMoveEl = null) {
+  const moveTarget = targetMoveEl || handleEl;
   let startX = 0;
   let startY = 0;
   let origXNorm = 0;
@@ -1070,17 +1140,9 @@ function attachDragBehavior(el, dataItem, onTapCallback) {
   let moved = false;
   let dragging = false;
 
-  el.addEventListener('pointerdown', (e) => {
-    // すでにフォーカス中のテキスト内部をタップした場合はカーソル移動を優先
-    if (
-      !state.redSheetActive &&
-      e.target instanceof HTMLElement &&
-      e.target.classList.contains('text-box-content') &&
-      document.activeElement === e.target
-    ) {
-      e.stopPropagation();
-      return;
-    }
+  handleEl.addEventListener('pointerdown', (e) => {
+    // 赤シートモード中はドラッグせずタップ判定のみ
+    if (state.redSheetActive) return;
 
     e.stopPropagation();
     dragging = true;
@@ -1089,43 +1151,50 @@ function attachDragBehavior(el, dataItem, onTapCallback) {
     startY = e.clientY;
     origXNorm = dataItem.xNorm;
     origYNorm = dataItem.yNorm;
-    el.setPointerCapture(e.pointerId);
+    try {
+      handleEl.setPointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   });
 
-  el.addEventListener('pointermove', (e) => {
-    if (!dragging) return;
+  handleEl.addEventListener('pointermove', (e) => {
+    if (!dragging || state.redSheetActive) return;
     const dx = e.clientX - startX;
     const dy = e.clientY - startY;
-    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
-      if (!moved && !state.redSheetActive) {
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      if (!moved) {
         recordHistoryBeforeChange();
       }
       moved = true;
     }
-    if (moved && !state.redSheetActive) {
+    if (moved) {
       const w = state.canvasCssWidth || 1;
       const h = state.canvasCssHeight || 1;
       dataItem.xNorm = clamp(origXNorm + dx / w, 0.01, 0.94);
       dataItem.yNorm = clamp(origYNorm + dy / h, 0.01, 0.95);
-      el.style.left = `${Math.round(dataItem.xNorm * w)}px`;
-      el.style.top = `${Math.round(dataItem.yNorm * h)}px`;
+      moveTarget.style.left = `${Math.round(dataItem.xNorm * w)}px`;
+      moveTarget.style.top = `${Math.round(dataItem.yNorm * h)}px`;
     }
   });
 
-  el.addEventListener('pointerup', async (e) => {
+  const endDrag = async (e) => {
     if (!dragging) return;
     dragging = false;
     try {
-      el.releasePointerCapture(e.pointerId);
+      handleEl.releasePointerCapture(e.pointerId);
     } catch {
       // ignore
     }
-    if (moved && !state.redSheetActive) {
+    if (moved) {
       await autoSaveActiveDocument();
-    } else {
+    } else if (onTapCallback) {
       onTapCallback();
     }
-  });
+  };
+
+  handleEl.addEventListener('pointerup', endDrag);
+  handleEl.addEventListener('pointercancel', endDrag);
 }
 
 /* ============================================================================
@@ -1336,6 +1405,149 @@ function distanceToSegment(px, py, x1, y1, x2, y2) {
   let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
   t = clamp(t, 0, 1);
   return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+}
+
+/**
+ * 2本指ピンチによるPDFの拡大・縮小＆パン移動、および1本指でのスクロール移動
+ */
+function setupPinchZoomAndPan() {
+  const viewer = document.getElementById('viewer-container');
+  const stage = document.getElementById('page-stage');
+  if (!viewer || !stage) return;
+
+  /** @type {Map<number, { clientX: number, clientY: number }>} */
+  const activePointers = new Map();
+
+  let pinchInitialDist = 0;
+  let pinchInitialZoom = 1.0;
+  let pinchInitialMidX = 0;
+  let pinchInitialMidY = 0;
+  let pinchInitialScrollLeft = 0;
+  let pinchInitialScrollTop = 0;
+  let isPinching = false;
+  let currentPinchRatio = 1.0;
+
+  // 1本指パン（移動ツール選択時）
+  let isPanDragging = false;
+  let panStartX = 0;
+  let panStartY = 0;
+  let panStartScrollLeft = 0;
+  let panStartScrollTop = 0;
+
+  const onPointerDown = (e) => {
+    // マウス右クリック等は除外
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+
+    // 2本以上の指が触れた場合：手書きなどの描画を即座にキャンセルしてピンチズームへ移行
+    if (activePointers.size >= 2) {
+      if (state.isDrawing) {
+        state.isDrawing = false;
+        state.currentStrokePoints = [];
+        renderStrokesCanvas();
+      }
+      isPanDragging = false;
+      isPinching = true;
+
+      const pts = Array.from(activePointers.values());
+      pinchInitialDist = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
+      pinchInitialZoom = state.zoomScale;
+      pinchInitialMidX = (pts[0].clientX + pts[1].clientX) / 2;
+      pinchInitialMidY = (pts[0].clientY + pts[1].clientY) / 2;
+      pinchInitialScrollLeft = viewer.scrollLeft;
+      pinchInitialScrollTop = viewer.scrollTop;
+      currentPinchRatio = 1.0;
+      return;
+    }
+
+    // 1本指の場合：移動ツール選択時ならスクロール移動を開始
+    if (activePointers.size === 1 && state.currentTool === 'pan' && !state.redSheetActive) {
+      isPanDragging = true;
+      panStartX = e.clientX;
+      panStartY = e.clientY;
+      panStartScrollLeft = viewer.scrollLeft;
+      panStartScrollTop = viewer.scrollTop;
+    }
+  };
+
+  const onPointerMove = (e) => {
+    if (!activePointers.has(e.pointerId)) return;
+    activePointers.set(e.pointerId, { clientX: e.clientX, clientY: e.clientY });
+
+    // 2本指ピンチズーム中
+    if (isPinching && activePointers.size >= 2) {
+      const pts = Array.from(activePointers.values());
+      const currDist = Math.hypot(pts[0].clientX - pts[1].clientX, pts[0].clientY - pts[1].clientY);
+      currentPinchRatio = currDist / Math.max(10, pinchInitialDist);
+
+      const currMidX = (pts[0].clientX + pts[1].clientX) / 2;
+      const currMidY = (pts[0].clientY + pts[1].clientY) / 2;
+      const panDx = currMidX - pinchInitialMidX;
+      const panDy = currMidY - pinchInitialMidY;
+
+      viewer.scrollLeft = pinchInitialScrollLeft - panDx;
+      viewer.scrollTop = pinchInitialScrollTop - panDy;
+
+      // GPUアクセラレーションで滑らかに即時プレビュー
+      stage.style.transformOrigin = 'center center';
+      stage.style.transform = `scale(${currentPinchRatio})`;
+      return;
+    }
+
+    // 1本指パン移動中
+    if (isPanDragging && activePointers.size === 1) {
+      const dx = e.clientX - panStartX;
+      const dy = e.clientY - panStartY;
+      viewer.scrollLeft = panStartScrollLeft - dx;
+      viewer.scrollTop = panStartScrollTop - dy;
+    }
+  };
+
+  const onPointerUp = async (e) => {
+    activePointers.delete(e.pointerId);
+
+    if (isPinching && activePointers.size < 2) {
+      isPinching = false;
+      stage.style.transform = '';
+      const newScale = clamp(pinchInitialZoom * currentPinchRatio, 0.5, 3.0);
+      state.zoomScale = Math.round(newScale * 10) / 10;
+      await renderCurrentPage();
+    }
+
+    if (activePointers.size === 0) {
+      isPanDragging = false;
+    }
+  };
+
+  viewer.addEventListener('pointerdown', onPointerDown, { passive: true });
+  window.addEventListener('pointermove', onPointerMove, { passive: true });
+  window.addEventListener('pointerup', onPointerUp, { passive: true });
+  window.addEventListener('pointercancel', onPointerUp, { passive: true });
+
+  // iOS Safariのネイティブ2本指ジェスチャー対応
+  viewer.addEventListener('gesturestart', (e) => {
+    // @ts-ignore
+    pinchInitialZoom = state.zoomScale;
+    if (state.isDrawing) {
+      state.isDrawing = false;
+      state.currentStrokePoints = [];
+      renderStrokesCanvas();
+    }
+  });
+  viewer.addEventListener('gesturechange', (e) => {
+    e.preventDefault();
+    // @ts-ignore
+    const scale = e.scale || 1.0;
+    stage.style.transform = `scale(${scale})`;
+  });
+  viewer.addEventListener('gestureend', async (e) => {
+    // @ts-ignore
+    const scale = e.scale || 1.0;
+    stage.style.transform = '';
+    state.zoomScale = clamp(pinchInitialZoom * scale, 0.5, 3.0);
+    state.zoomScale = Math.round(state.zoomScale * 10) / 10;
+    await renderCurrentPage();
+  });
 }
 
 /* ============================================================================
@@ -1750,6 +1962,7 @@ export async function initApp() {
   await loadUserPreferences();
   await refreshHomeData();
   setupCanvasInteractions();
+  setupPinchZoomAndPan();
 
   // ホーム画面：PDFファイル選択
   const fileInput = /** @type {HTMLInputElement | null} */ (document.getElementById('pdf-file-input'));
