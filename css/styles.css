@@ -437,6 +437,49 @@ button, input, select, textarea {
   flex-shrink: 0;
 }
 
+/* 文字サイズ変更セレクタ＆プリセットチップ */
+.font-size-select {
+  padding: 3px 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  cursor: pointer;
+  outline: none;
+}
+
+.font-size-select:focus {
+  border-color: var(--primary);
+}
+
+.font-preset-chip {
+  padding: 3px 7px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-sub);
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.1s ease;
+}
+
+.font-preset-chip:hover {
+  background: var(--bg-muted);
+  color: var(--text-main);
+}
+
+.font-preset-chip.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  font-weight: 700;
+}
+
 .color-swatch {
   width: 24px;
   height: 24px;

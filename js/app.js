@@ -7,6 +7,10 @@ import {
   TEXT_COLORS,
   MARKER_COLORS,
   PEN_COLORS,
+  FONT_SIZE_STEPS,
+  FONT_SIZE_PRESETS,
+  getNextLargerFontSize,
+  getNextSmallerFontSize,
   screenToNormalized,
   isRedSheetTargetText,
   isRedSheetTargetStroke,
@@ -1040,7 +1044,7 @@ function renderOverlayElements() {
     smallerBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       recordHistoryBeforeChange();
-      item.fontSize = clamp((item.fontSize || 16) - 3, 10, 48);
+      item.fontSize = getNextSmallerFontSize(item.fontSize || 16);
       state.prefFontSize = item.fontSize;
       await saveSetting('prefFontSize', state.prefFontSize);
       renderOverlayElements();
@@ -1058,7 +1062,7 @@ function renderOverlayElements() {
     largerBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
       recordHistoryBeforeChange();
-      item.fontSize = clamp((item.fontSize || 16) + 3, 10, 48);
+      item.fontSize = getNextLargerFontSize(item.fontSize || 16);
       state.prefFontSize = item.fontSize;
       await saveSetting('prefFontSize', state.prefFontSize);
       renderOverlayElements();
@@ -1760,16 +1764,10 @@ function renderSubToolbar() {
     modeGroup.appendChild(switchWrap);
     bar.appendChild(modeGroup);
 
-    // 文字サイズ変更（スマホでもスクロールせずすぐ押せるよう先頭近くに配置）
+    // 文字サイズ変更（8pt〜84ptのワイドレンジ対応）
     const sizeGroup = document.createElement('div');
-    sizeGroup.className = 'tool-option-group';
-    const curSize = selectedTextObj ? selectedTextObj.fontSize : state.prefFontSize;
-
-    const sizeLabel = document.createElement('span');
-    sizeLabel.textContent = `${curSize}pt`;
-    sizeLabel.style.fontWeight = '700';
-    sizeLabel.style.minWidth = '36px';
-    sizeLabel.style.textAlign = 'center';
+    sizeGroup.className = 'tool-option-group font-size-option-group';
+    const curSize = selectedTextObj ? (selectedTextObj.fontSize || 16) : state.prefFontSize;
 
     const minusBtn = document.createElement('button');
     minusBtn.className = 'btn';
@@ -1777,7 +1775,7 @@ function renderSubToolbar() {
     minusBtn.textContent = '－';
     minusBtn.title = '文字を小さく';
     minusBtn.addEventListener('click', async () => {
-      const next = clamp(curSize - 3, 10, 48);
+      const next = getNextSmallerFontSize(curSize);
       state.prefFontSize = next;
       await saveSetting('prefFontSize', next);
       if (selectedTextObj) {
@@ -1785,9 +1783,43 @@ function renderSubToolbar() {
         selectedTextObj.fontSize = next;
         renderOverlayElements();
         await autoSaveActiveDocument();
-        showToast(`🔤 文字サイズ: ${next}pt`);
       }
       renderSubToolbar();
+      showToast(`🔤 文字サイズ: ${next}pt`);
+    });
+
+    // ドロップダウン選択（タップするとネイティブピッカーが開く）
+    const selectEl = document.createElement('select');
+    selectEl.className = 'font-size-select';
+    selectEl.title = '文字サイズを選択';
+    for (const step of FONT_SIZE_STEPS) {
+      const opt = document.createElement('option');
+      opt.value = String(step);
+      let note = '';
+      if (step === 8) note = ' (極小)';
+      else if (step === 12) note = ' (小)';
+      else if (step === 16) note = ' (標準)';
+      else if (step === 22) note = ' (中)';
+      else if (step === 30) note = ' (大)';
+      else if (step === 42) note = ' (特大)';
+      else if (step === 60) note = ' (超大)';
+      else if (step === 84) note = ' (最大)';
+      opt.textContent = `${step}pt${note}`;
+      if (step === curSize) opt.selected = true;
+      selectEl.appendChild(opt);
+    }
+    selectEl.addEventListener('change', async () => {
+      const next = Number(selectEl.value);
+      state.prefFontSize = next;
+      await saveSetting('prefFontSize', next);
+      if (selectedTextObj) {
+        recordHistoryBeforeChange();
+        selectedTextObj.fontSize = next;
+        renderOverlayElements();
+        await autoSaveActiveDocument();
+      }
+      renderSubToolbar();
+      showToast(`🔤 文字サイズ: ${next}pt`);
     });
 
     const plusBtn = document.createElement('button');
@@ -1796,7 +1828,7 @@ function renderSubToolbar() {
     plusBtn.textContent = '＋';
     plusBtn.title = '文字を大きく';
     plusBtn.addEventListener('click', async () => {
-      const next = clamp(curSize + 3, 10, 48);
+      const next = getNextLargerFontSize(curSize);
       state.prefFontSize = next;
       await saveSetting('prefFontSize', next);
       if (selectedTextObj) {
@@ -1804,12 +1836,34 @@ function renderSubToolbar() {
         selectedTextObj.fontSize = next;
         renderOverlayElements();
         await autoSaveActiveDocument();
-        showToast(`🔤 文字サイズ: ${next}pt`);
       }
       renderSubToolbar();
+      showToast(`🔤 文字サイズ: ${next}pt`);
     });
 
-    sizeGroup.append(minusBtn, sizeLabel, plusBtn);
+    sizeGroup.append(minusBtn, selectEl, plusBtn);
+
+    // よく使うプリセットチップ（極小8、小12、標準16、中22、大30、特大42、超大60、最大84）
+    for (const p of FONT_SIZE_PRESETS) {
+      const chip = document.createElement('button');
+      chip.className = `font-preset-chip ${curSize === p.size ? 'active' : ''}`;
+      chip.textContent = p.label;
+      chip.title = `${p.size}ptに変更`;
+      chip.addEventListener('click', async () => {
+        state.prefFontSize = p.size;
+        await saveSetting('prefFontSize', p.size);
+        if (selectedTextObj) {
+          recordHistoryBeforeChange();
+          selectedTextObj.fontSize = p.size;
+          renderOverlayElements();
+          await autoSaveActiveDocument();
+        }
+        renderSubToolbar();
+        showToast(`🔤 文字サイズ: ${p.size}pt`);
+      });
+      sizeGroup.appendChild(chip);
+    }
+
     bar.appendChild(sizeGroup);
 
     // 文字色パレット

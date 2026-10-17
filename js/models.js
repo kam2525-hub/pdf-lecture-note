@@ -81,6 +81,46 @@ export const PEN_COLORS = [
   { id: 'blue-pen', label: '青ペン', hex: '#2563eb', isRedSheetTarget: false },
 ];
 
+/** フォントサイズのワイドレンジ定義（極小8pt〜特大84pt） */
+export const FONT_SIZE_STEPS = [8, 10, 12, 14, 16, 19, 22, 26, 30, 36, 42, 50, 60, 72, 84];
+
+export const FONT_SIZE_PRESETS = [
+  { size: 8, label: '極小 8' },
+  { size: 12, label: '小 12' },
+  { size: 16, label: '標準 16' },
+  { size: 22, label: '中 22' },
+  { size: 30, label: '大 30' },
+  { size: 42, label: '特大 42' },
+  { size: 60, label: '超大 60' },
+  { size: 84, label: '最大 84' },
+];
+
+/**
+ * 現在のフォントサイズより一段階大きいサイズを取得する
+ * @param {number} cur
+ * @returns {number}
+ */
+export function getNextLargerFontSize(cur) {
+  const current = Number(cur) || 16;
+  for (const s of FONT_SIZE_STEPS) {
+    if (s > current) return s;
+  }
+  return FONT_SIZE_STEPS[FONT_SIZE_STEPS.length - 1];
+}
+
+/**
+ * 現在のフォントサイズより一段階小さいサイズを取得する
+ * @param {number} cur
+ * @returns {number}
+ */
+export function getNextSmallerFontSize(cur) {
+  const current = Number(cur) || 16;
+  for (let i = FONT_SIZE_STEPS.length - 1; i >= 0; i--) {
+    if (FONT_SIZE_STEPS[i] < current) return FONT_SIZE_STEPS[i];
+  }
+  return FONT_SIZE_STEPS[0];
+}
+
 /**
  * 数値を [min, max] の範囲にクランプする
  * @param {number} val
