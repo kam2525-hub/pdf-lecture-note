@@ -45,6 +45,13 @@ def main():
                 self.end_headers()
                 self.wfile.write(b'OK')
                 done_event.set()
+            elif self.path == '/__test_log__':
+                length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(length).decode('utf-8')
+                print('[BrowserLog]', body)
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'OK')
             else:
                 self.send_response(404)
                 self.end_headers()

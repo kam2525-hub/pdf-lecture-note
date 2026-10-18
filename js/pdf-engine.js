@@ -4,10 +4,10 @@
  */
 import * as pdfjsLib from '../vendor/pdf.min.mjs';
 import {
-  normalizedToPdfPoint,
-  layoutVerticalTextForPdf,
-  STAMP_TYPES,
   clamp,
+  layoutVerticalTextForPdf,
+  normalizedToPdfPoint,
+  STAMP_TYPES,
 } from './models.js';
 
 // PDF.js Worker設定
@@ -15,23 +15,33 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdf.worker.min.mjs',
 
 /** @type {ArrayBuffer | null} */
 let cachedFontBytes = null;
+/** @type {Promise<ArrayBuffer | null> | null} */
+let fontLoadPromise = null;
 
 /**
  * 日本語フォント (NotoSansJP) のバイナリを取得・キャッシュする
  * @returns {Promise<ArrayBuffer | null>}
  */
-async function loadJapaneseFontBytes() {
-  if (cachedFontBytes) return cachedFontBytes;
-  try {
-    const fontUrl = new URL('../vendor/NotoSansJP-Regular.ttf', import.meta.url).href;
-    const res = await fetch(fontUrl);
-    if (!res.ok) return null;
-    cachedFontBytes = await res.arrayBuffer();
-    return cachedFontBytes;
-  } catch (err) {
-    console.warn('Japanese font load failed:', err);
-    return null;
-  }
+export async function loadJapaneseFontBytes() {
+  if (cachedFontBytes && cachedFontBytes.byteLength > 0) return cachedFontBytes;
+  if (fontLoadPromise) return fontLoadPromise;
+
+  fontLoadPromise = (async () => {
+    try {
+      const fontUrl = new URL('../vendor/NotoSansJP-Regular.ttf', import.meta.url).href;
+      const res = await fetch(fontUrl);
+      if (!res.ok) return null;
+      cachedFontBytes = await res.arrayBuffer();
+      return cachedFontBytes;
+    } catch (err) {
+      console.warn('Japanese font load failed:', err);
+      return null;
+    } finally {
+      fontLoadPromise = null;
+    }
+  })();
+
+  return fontLoadPromise;
 }
 
 /**
@@ -301,6 +311,17 @@ export async function exportAnnotatedPdf(doc) {
       console.warn('Custom Japanese font embed failed, falling back to standard font:', err);
     }
   }
+
+  const pages = Array.isArray(doc.pages) ? doc.pages : [];
+  const hasTextAnnotations = pages.some((p) =>
+    Array.isArray(p.annotations?.texts) &&
+    p.annotations.texts.some((t) => typeof t.content === 'string' && t.content.trim().length > 0)
+  );
+
+  if (!customFont && hasTextAnnotations) {
+    throw new Error('日本語フォントの読み込みに失敗したため、テキストを埋め込めませんでした。通信環境を確認して再度お試しください。');
+  }
+
   const fallbackFont = await outPdf.embedFont(PDFLib.StandardFonts.Helvetica);
   const activeFont = customFont || fallbackFont;
 
@@ -310,7 +331,6 @@ export async function exportAnnotatedPdf(doc) {
     srcPdf = await PDFDocument.load(doc.pdfBytes);
   }
 
-  const pages = Array.isArray(doc.pages) ? doc.pages : [];
   for (let i = 0; i < pages.length; i++) {
     const pageMeta = pages[i];
     let pdfPage;
@@ -391,7 +411,7 @@ export async function exportAnnotatedPdf(doc) {
       if (!content.trim()) continue;
 
       const { r, g, b } = hexToRgb01(item.color || '#1e293b');
-      const fontSizePt = ((item.fontSize || 16) / 595.28) * pdfW;
+      const fontSizePt = Math.max(1, ((item.fontSize || 16) / 595.28) * pdfW);
       const topLeft = normalizedToPdfPoint(item.xNorm, item.yNorm, pdfW, pdfH);
 
       if (item.writingMode === 'vertical') {

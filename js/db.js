@@ -14,6 +14,8 @@ const STORE_SETTINGS = 'settings';
 /** @type {IDBDatabase | null} */
 let dbInstance = null;
 let useMemoryFallback = false;
+/** @type {Promise<IDBDatabase | null> | null} */
+let initPromise = null;
 
 const memoryStore = {
   /** @type {Map<string, any>} */
@@ -31,6 +33,7 @@ const memoryStore = {
 export async function initDB() {
   if (dbInstance) return dbInstance;
   if (useMemoryFallback) return null;
+  if (initPromise) return initPromise;
 
   if (typeof indexedDB === 'undefined') {
     useMemoryFallback = true;
@@ -38,7 +41,7 @@ export async function initDB() {
     return null;
   }
 
-  return new Promise((resolve) => {
+  initPromise = new Promise((resolve) => {
     try {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -75,6 +78,8 @@ export async function initDB() {
       ensureDefaultSubjects().then(() => resolve(null));
     }
   });
+
+  return initPromise;
 }
 
 /**

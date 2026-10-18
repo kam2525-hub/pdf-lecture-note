@@ -8,6 +8,24 @@
 </head>
 <body>
   <pre id="test-output">Running tests...</pre>
+  <script>
+    window.addEventListener('error', (e) => {
+      fetch('/__test_log__', { method: 'POST', body: 'GlobalError: ' + e.message + ' at ' + e.filename + ':' + e.lineno }).catch(() => {});
+      fetch('/__test_result__', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'GLOBAL_ERROR', error: e.message, filename: e.filename, lineno: e.lineno }),
+      }).catch(() => {});
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      fetch('/__test_log__', { method: 'POST', body: 'UnhandledRejection: ' + String(e.reason) }).catch(() => {});
+      fetch('/__test_result__', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'UNHANDLED_REJECTION', error: String(e.reason) }),
+      }).catch(() => {});
+    });
+  </script>
   <script type="module">
     import {
       clamp,
@@ -50,9 +68,16 @@
       results.push({ name, passed: true });
     }
 
+    async function tlog(msg) {
+      console.log(msg);
+      await fetch('/__test_log__', { method: 'POST', body: msg }).catch(() => {});
+    }
+
     async function runAllTests() {
+      await tlog('Starting runAllTests...');
       const outEl = document.getElementById('test-output');
       try {
+        await tlog('Step 1: clamp & font size steps');
         // 1. 境界値・異常値テスト (clamp / 座標変換)
         assert(clamp(5, 0, 10) === 5, 'clamp normal value');
         assert(clamp(-5, 0, 10) === 0, 'clamp lower boundary');
@@ -169,16 +194,22 @@
         assert(quizPrompt.includes('清少納言・枕草子') && quizPrompt.includes('[赤字・暗記重要]'), 'AI quiz prompt contains red memo');
 
         // 6. IndexedDB 保存・取得テスト
+        await tlog('Step 6: initDB...');
         await initDB();
+        await tlog('Step 6: getAllSubjects...');
         const subjects = await getAllSubjects();
         assert(subjects.length >= 5, 'Default subjects initialized');
+        await tlog('Step 6: saveSetting...');
         await saveSetting('testKey', 'testVal');
+        await tlog('Step 6: getSetting...');
         const loadedSetting = await getSetting('testKey', null);
         assert(loadedSetting === 'testVal', 'Setting saved and loaded');
 
         // 7. PDF生成・解析・縦書き＆横書き＆白紙ページ統合PDF出力テスト (E2E)
+        await tlog('Step 7: createSampleHandoutPdfBytes...');
         const samplePdfBytes = await createSampleHandoutPdfBytes();
         assert(samplePdfBytes.byteLength > 1000, 'Sample PDF generated with Japanese font');
+        await tlog('Step 7: parsePdfDocument...');
         const parsed = await parsePdfDocument(samplePdfBytes);
         assert(parsed.numPages === 2, 'Parsed sample PDF has 2 pages');
 
@@ -203,6 +234,7 @@
           annotations: { texts: [], strokes: [], stamps: [] },
         });
 
+        await tlog('Step 7: exportAnnotatedPdf...');
         const exportedBytes = await exportAnnotatedPdf({
           id: 'doc_e2e',
           title: 'E2Eテスト',
@@ -210,9 +242,11 @@
           pages: parsed.pages,
         });
         assert(exportedBytes.byteLength > samplePdfBytes.byteLength, 'Exported annotated PDF has valid byte size');
+        await tlog('Step 7: parsePdfDocument on exportedBytes...');
         const reparsed = await parsePdfDocument(exportedBytes);
         assert(reparsed.numPages === 3, 'Exported PDF has 3 pages (2 original + 1 inserted blank page)');
 
+        await tlog('All tests passed, sending result...');
         const payload = { status: 'ALL_PASSED', total: results.length, results };
         outEl.textContent = JSON.stringify(payload, null, 2);
         await fetch('/__test_result__', {
@@ -241,6 +275,14 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'UNCAUGHT_ERROR', error: e.message, filename: e.filename, lineno: e.lineno }),
+      });
+    });
+
+    window.addEventListener('unhandledrejection', (e) => {
+      fetch('/__test_result__', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'UNHANDLED_REJECTION', error: String(e.reason) }),
       });
     });
 

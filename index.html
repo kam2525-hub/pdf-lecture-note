@@ -191,6 +191,32 @@
     </div>
   </div>
 
+  <!-- ==================== 5. PDF保存完了・共有モーダル ==================== -->
+  <div id="pdf-export-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <span>💾 PDF保存が完了しました</span>
+        <button id="btn-close-export-modal" class="btn" style="padding: 4px 9px;">×</button>
+      </div>
+      <div class="modal-body" style="gap: 12px;">
+        <p id="export-modal-desc" style="margin: 0; font-size: 0.85rem; color: var(--text-main); line-height: 1.5;">
+          書き込んだメモやマーカーがすべて統合されたPDFが生成されました。
+        </p>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button id="btn-export-share" class="btn btn-primary" style="padding: 12px; font-size: 0.95rem; justify-content: center;">
+            📲 ファイルに保存 / 共有（スマホ推奨）
+          </button>
+          <button id="btn-export-download" class="btn" style="padding: 10px; font-size: 0.88rem; justify-content: center;">
+            ⬇️ もう一度ダウンロード
+          </button>
+          <button id="btn-export-preview" class="btn" style="padding: 10px; font-size: 0.88rem; justify-content: center;">
+            👁️ 新しいタブでプレビュー確認
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- トースト通知領域 -->
   <div id="toast-container" class="toast-container"></div>
 

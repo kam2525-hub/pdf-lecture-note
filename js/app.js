@@ -37,6 +37,7 @@ import {
   renderPageBaseToCanvas,
   exportAnnotatedPdf,
   createSampleHandoutPdfBytes,
+  loadJapaneseFontBytes,
 } from './pdf-engine.js';
 
 /** アプリケーション状態 */
@@ -780,6 +781,27 @@ function applyZoomScale(newZoom) {
 }
 
 /**
+ * DOM上に存在するすべてのテキストボックスの入力値をデータモデル（state.activeDoc）に即座に同期する
+ */
+function syncAllTextBoxesFromDom() {
+  if (!state.activeDoc) return;
+  const pageMeta = state.activeDoc.pages[state.currentPageIndex];
+  if (!pageMeta || !Array.isArray(pageMeta.annotations?.texts)) return;
+
+  const boxes = document.querySelectorAll('.text-box-item');
+  boxes.forEach((box) => {
+    const id = box.getAttribute('data-id');
+    const contentEl = /** @type {HTMLElement | null} */ (box.querySelector('.text-box-content'));
+    if (!id || !contentEl) return;
+    const item = pageMeta.annotations.texts.find((t) => t.id === id);
+    if (item) {
+      const text = (contentEl.innerText || contentEl.textContent || '').trim();
+      item.content = text;
+    }
+  });
+}
+
+/**
  * 空のまま放置されたテキストボックスを自動整理する
  * @param {string | null} [keepId=null]
  */
@@ -928,6 +950,9 @@ function renderOverlayElements() {
   const pageMeta = state.activeDoc.pages[state.currentPageIndex];
   const overlay = document.getElementById('overlay-layer');
   if (!pageMeta || !overlay) return;
+
+  // DOMをクリアする前に、入力中のテキストがあればモデルへ即座に同期
+  syncAllTextBoxesFromDom();
 
   overlay.textContent = '';
   const w = state.canvasCssWidth;
@@ -1155,14 +1180,20 @@ function renderOverlayElements() {
       selectThisBox();
     });
 
+    const syncThisBox = async () => {
+      item.content = (contentEl.innerText || contentEl.textContent || '').trim();
+      await autoSaveActiveDocument();
+    };
+
     contentEl.addEventListener('input', async () => {
       if (!beforeEditSnapshotRecorded) {
         recordHistoryBeforeChange();
         beforeEditSnapshotRecorded = true;
       }
-      item.content = contentEl.innerText;
-      await autoSaveActiveDocument();
+      await syncThisBox();
     });
+    contentEl.addEventListener('blur', syncThisBox);
+    contentEl.addEventListener('compositionend', syncThisBox);
 
     box.appendChild(contentEl);
 
@@ -2146,27 +2177,129 @@ function updateAiPromptModalContent(mode) {
 }
 
 /**
- * 書き込み済みPDFを出力してダウンロードする
+ * 書き込み済みPDFを出力してダウンロード / 端末ファイル共有する
  */
 async function handleExportPdf() {
   if (!state.activeDoc) return;
   try {
+    // 1. DOM上の最新テキストをすべてデータモデルに同期し、空ボックス整理＆IndexedDB保存
+    syncAllTextBoxesFromDom();
+    cleanupEmptyTextBoxes(null);
+    await autoSaveActiveDocument();
+
     showToast('日本語フォントと書き込みを統合してPDFを生成中...');
+
+    // 2. 書き込み統合済みPDFのバイナリを出力
     const outBytes = await exportAnnotatedPdf(state.activeDoc);
+    const fileName = `${state.activeDoc.title || '授業プリント'}_書き込み済.pdf`;
     const blob = new Blob([outBytes], { type: 'application/pdf' });
+    const file = new File([blob], fileName, { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${state.activeDoc.title || '授業プリント'}_書き込み済.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast('書き込み済みPDFを保存しました！');
+
+    // 3. モバイル端末 (iOS Safari / Android) 向けネイティブ共有シート (ファイルに保存)
+    let sharedViaNative = false;
+    // @ts-ignore
+    if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: fileName,
+          text: `${state.activeDoc.title || '授業プリント'}（書き込み済みPDF）`,
+        });
+        sharedViaNative = true;
+        showToast('✓ PDFを保存・共有しました！');
+      } catch (shareErr) {
+        // ユーザーが共有シートをキャンセルした場合はフォールバック
+        console.log('Share sheet dismissed or canceled:', shareErr);
+      }
+    }
+
+    // 4. PC等または共有キャンセル時：ブラウザダウンロード
+    if (!sharedViaNative) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast('✓ 書き込み済みPDFを保存しました！');
+    }
+
+    // 5. 確実に手元で確認・保存できるよう完了モーダルを表示
+    showPdfExportCompleteModal(fileName, blob, url);
   } catch (err) {
     console.error(err);
-    alert(`PDF出力中にエラーが発生しました: ${err instanceof Error ? err.message : String(err)}`);
+    alert(`PDF保存中にエラーが発生しました: ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/**
+ * PDF保存完了モーダルを表示する（モバイル・PCの両方で確実に保存・確認可能にする）
+ * @param {string} fileName
+ * @param {Blob} blob
+ * @param {string} url
+ */
+function showPdfExportCompleteModal(fileName, blob, url) {
+  const modal = document.getElementById('pdf-export-modal');
+  if (!modal) return;
+
+  const desc = document.getElementById('export-modal-desc');
+  if (desc) {
+    const sizeKb = Math.round(blob.size / 1024);
+    desc.textContent = `「${fileName}」（${sizeKb} KB）の生成が完了しました。iPhoneやiPadの方は「ファイルに保存 / 共有」から本体に保存できます。`;
+  }
+
+  const shareBtn = /** @type {HTMLElement | null} */ (document.getElementById('btn-export-share'));
+  if (shareBtn) {
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+    // @ts-ignore
+    if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] })) {
+      shareBtn.style.display = 'flex';
+      shareBtn.onclick = async () => {
+        try {
+          await navigator.share({
+            files: [file],
+            title: fileName,
+            text: fileName,
+          });
+          showToast('✓ 保存・共有しました');
+        } catch {
+          // ignore
+        }
+      };
+    } else {
+      shareBtn.style.display = 'none';
+    }
+  }
+
+  const downloadBtn = /** @type {HTMLElement | null} */ (document.getElementById('btn-export-download'));
+  if (downloadBtn) {
+    downloadBtn.onclick = () => {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      showToast('ダウンロードを開始しました');
+    };
+  }
+
+  const previewBtn = /** @type {HTMLElement | null} */ (document.getElementById('btn-export-preview'));
+  if (previewBtn) {
+    previewBtn.onclick = () => {
+      window.open(url, '_blank');
+    };
+  }
+
+  const closeBtn = /** @type {HTMLElement | null} */ (document.getElementById('btn-close-export-modal'));
+  if (closeBtn) {
+    closeBtn.onclick = () => {
+      modal.classList.add('hidden');
+    };
+  }
+
+  modal.classList.remove('hidden');
 }
 
 /* ============================================================================
@@ -2175,6 +2308,8 @@ async function handleExportPdf() {
 
 export async function initApp() {
   await initDB();
+  // 日本語フォントをバックグラウンドで先読み・IndexedDBキャッシュ（PDF保存の高速化）
+  loadJapaneseFontBytes().catch((err) => console.warn('Preload font error:', err));
   await loadUserPreferences();
   await refreshHomeData();
   setupCanvasInteractions();
@@ -2220,6 +2355,8 @@ export async function initApp() {
 
   // エディタ画面：戻るボタン
   document.getElementById('btn-back-home')?.addEventListener('click', async () => {
+    syncAllTextBoxesFromDom();
+    cleanupEmptyTextBoxes(null);
     await autoSaveActiveDocument();
     state.activeDoc = null;
     state.activePdfJsDoc = null;
@@ -2334,14 +2471,18 @@ export async function initApp() {
   // ページ移動
   document.getElementById('btn-prev-page')?.addEventListener('click', async () => {
     if (!state.activeDoc || state.currentPageIndex <= 0) return;
+    syncAllTextBoxesFromDom();
     cleanupEmptyTextBoxes(null);
+    await autoSaveActiveDocument();
     state.currentPageIndex -= 1;
     state.selectedTextId = null;
     await renderCurrentPage();
   });
   document.getElementById('btn-next-page')?.addEventListener('click', async () => {
     if (!state.activeDoc || state.currentPageIndex >= state.activeDoc.pages.length - 1) return;
+    syncAllTextBoxesFromDom();
     cleanupEmptyTextBoxes(null);
+    await autoSaveActiveDocument();
     state.currentPageIndex += 1;
     state.selectedTextId = null;
     await renderCurrentPage();
@@ -2374,6 +2515,14 @@ export async function initApp() {
       const tpl = /** @type {any} */ (btn.getAttribute('data-blank-template') || 'ruled');
       await insertBlankPageAfterCurrent(tpl);
     });
+  });
+
+  // タブ閉じ・リロード前のテキスト同期＆自動保存
+  window.addEventListener('beforeunload', () => {
+    syncAllTextBoxesFromDom();
+    if (state.activeDoc) {
+      saveDocument(state.activeDoc).catch(() => {});
+    }
   });
 }
 

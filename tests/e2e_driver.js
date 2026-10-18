@@ -169,6 +169,20 @@ export async function runUiE2E() {
     const pageIndicator = document.getElementById('page-indicator');
     assert(Boolean(pageIndicator && pageIndicator.textContent?.includes('/ 3 ページ')), 'Blank page inserted (total 3 pages)');
 
+    // 6-2. PDF保存ボタンをクリックして保存・エクスポートモーダルの表示とテキスト同期の検証
+    const exportBtn = /** @type {HTMLElement | null} */ (document.getElementById('btn-export-pdf'));
+    assert(Boolean(exportBtn), 'PDF export button exists');
+    exportBtn?.click();
+    for (let w = 0; w < 40; w++) {
+      await sleep(150);
+      const m = document.getElementById('pdf-export-modal');
+      if (m && !m.classList.contains('hidden')) break;
+    }
+    const exportModal = document.getElementById('pdf-export-modal');
+    assert(Boolean(exportModal && !exportModal.classList.contains('hidden')), 'PDF export complete modal opens with options');
+    document.getElementById('btn-close-export-modal')?.click();
+    await sleep(100);
+
     // 7. ホーム画面へ戻り、「★重要まとめ」「？不明まとめ」「横断検索」を確認
     document.getElementById('btn-back-home')?.click();
     await sleep(300);
