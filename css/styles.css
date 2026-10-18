@@ -703,8 +703,8 @@ button, input, select, textarea {
   user-select: text !important;
   -webkit-user-select: text !important;
   cursor: text;
-  min-width: 16px;
-  min-height: 18px;
+  min-width: 4px;
+  min-height: 6px;
   touch-action: manipulation !important;
   background: transparent;
   padding: 1px 2px;
@@ -728,8 +728,8 @@ button, input, select, textarea {
   -webkit-writing-mode: vertical-rl;
   text-orientation: upright;
   line-height: 1.35;
-  min-height: 20px;
-  min-width: 16px;
+  min-height: 6px;
+  min-width: 4px;
 }
 
 /* テキストボックス選択時のフローティング操作バー（中央配置＆コンパクト） */

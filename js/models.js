@@ -81,12 +81,14 @@ export const PEN_COLORS = [
   { id: 'blue-pen', label: '青ペン', hex: '#2563eb', isRedSheetTarget: false },
 ];
 
-/** フォントサイズのワイドレンジ定義（極小8pt〜特大84pt） */
-export const FONT_SIZE_STEPS = [8, 10, 12, 14, 16, 19, 22, 26, 30, 36, 42, 50, 60, 72, 84];
+/** フォントサイズのワイドレンジ定義（超極小1pt〜特大84pt） */
+export const FONT_SIZE_STEPS = [1, 2, 3, 4, 6, 8, 10, 12, 14, 16, 19, 22, 26, 30, 36, 42, 50, 60, 72, 84];
 
 export const FONT_SIZE_PRESETS = [
-  { size: 8, label: '極小 8' },
-  { size: 12, label: '小 12' },
+  { size: 1, label: '極小 1' },
+  { size: 4, label: '微小 4' },
+  { size: 8, label: '小 8' },
+  { size: 12, label: '補充 12' },
   { size: 16, label: '標準 16' },
   { size: 22, label: '中 22' },
   { size: 30, label: '大 30' },

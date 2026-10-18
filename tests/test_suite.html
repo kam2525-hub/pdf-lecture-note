@@ -59,14 +59,16 @@
         assert(clamp(15, 0, 10) === 10, 'clamp upper boundary');
         assert(clamp(NaN, 0, 10) === 0, 'clamp NaN fallback');
 
-        // フォントサイズワイドレンジ定義と段階移動テスト
-        assert(FONT_SIZE_STEPS[0] === 8, 'FONT_SIZE_STEPS starts at 8pt (ruby/small notes)');
+        // フォントサイズワイドレンジ定義と段階移動テスト (1pt〜84pt)
+        assert(FONT_SIZE_STEPS[0] === 1, 'FONT_SIZE_STEPS starts at 1pt (ultra small ruby/micro notes)');
         assert(FONT_SIZE_STEPS[FONT_SIZE_STEPS.length - 1] === 84, 'FONT_SIZE_STEPS ends at 84pt (super large titles)');
+        assert(getNextLargerFontSize(1) === 2, 'getNextLargerFontSize(1) returns 2');
         assert(getNextLargerFontSize(16) === 19, 'getNextLargerFontSize(16) returns 19');
         assert(getNextLargerFontSize(84) === 84, 'getNextLargerFontSize(84) capped at 84');
         assert(getNextSmallerFontSize(16) === 14, 'getNextSmallerFontSize(16) returns 14');
-        assert(getNextSmallerFontSize(8) === 8, 'getNextSmallerFontSize(8) capped at 8');
-        assert(FONT_SIZE_PRESETS.length >= 8, 'FONT_SIZE_PRESETS covers 8 standard presets');
+        assert(getNextSmallerFontSize(2) === 1, 'getNextSmallerFontSize(2) returns 1');
+        assert(getNextSmallerFontSize(1) === 1, 'getNextSmallerFontSize(1) capped at 1');
+        assert(FONT_SIZE_PRESETS.length >= 8, 'FONT_SIZE_PRESETS covers standard presets');
 
         const normCenter = screenToNormalized(100, 200, 200, 400);
         assert(Math.abs(normCenter.xNorm - 0.5) < 1e-6 && Math.abs(normCenter.yNorm - 0.5) < 1e-6, 'screenToNormalized center');
